@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TrustTrip
 
-## Getting Started
+## Project Title & Problem Statement
 
-First, run the development server:
+**TrustTrip** is a web-based transparency system designed to address the lack of clarity in intercity bus ticket cancellation and refund processes.
+
+Currently, passengers often do not understand how refund amounts are calculated or why deductions occur, which leads to confusion and mistrust. TrustTrip focuses on **explainability** by simulating a rule-based refund system that clearly shows *how* and *why* a refund amount is generated.
+
+---
+
+## Folder Structure & Explanation
+
+trusttrip/
+├── app/
+│   ├── page.tsx          # Main landing page (UI entry point)
+│   ├── layout.tsx        # Root layout shared across pages
+│   └── api/
+│       └── refund/
+│           └── route.ts  # Backend API route for refund logic
+├── public/               # Static assets (kept minimal)
+├── README.md             # Project documentation
+├── package.json          # Project dependencies and scripts
+├── tsconfig.json         # TypeScript configuration
+└── next.config.js        # Next.js configuration
+
+**Explanation:**
+- `app/` contains both frontend pages and backend API routes using the Next.js App Router.
+- `app/api/refund/route.ts` serves as the backend entry point for refund-related operations.
+- `public/` is reserved for static assets if required in later sprints.
+- Configuration files ensure consistency and scalability as the project grows.
+
+---
+
+## Setup Instructions
+
+### Installation
+
+Clone the repository and install dependencies:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+git clone <repository-url>
+cd trusttrip
+npm install
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Reflection
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project follows Next.js best practices by combining frontend and backend logic in a single codebase.
+This structure helps the team scale the application in future sprints by:
+	•	Enabling parallel development of UI and API layers
+	•	Reducing context switching between multiple repositories
+	•	Making it easier to integrate databases, caching, and authentication later
+	•	Keeping the codebase modular, clean, and maintainable
 
-## Learn More
+By starting with a minimal but structured foundation, TrustTrip is well-prepared for iterative feature additions.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+⸻

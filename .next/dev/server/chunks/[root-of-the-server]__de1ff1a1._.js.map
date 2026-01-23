@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 46, "column": 0}, "map": {"version":3,"sources":["file:///Users/hasan/s63-0126-kph-fullstack-with-nextjs-trusttrip/app/api/refund/route.ts"],"sourcesContent":["import { NextResponse } from \"next/server\";\n\nexport async function POST() {\n  return NextResponse.json({\n    success: true,\n    message: \"Refund API working\",\n  });\n}"],"names":[],"mappings":";;;;AAAA;;AAEO,eAAe;IACpB,OAAO,gJAAY,CAAC,IAAI,CAAC;QACvB,SAAS;QACT,SAAS;IACX;AACF"}}]
+}
