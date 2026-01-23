@@ -4,7 +4,7 @@
 
 **TrustTrip** is a web-based transparency system designed to address the lack of clarity in intercity bus ticket cancellation and refund processes.
 
-Currently, passengers often do not understand how refund amounts are calculated or why deductions occur, which leads to confusion and mistrust. TrustTrip focuses on **explainability** by simulating a rule-based refund system that clearly shows *how* and *why* a refund amount is generated.
+Currently, passengers often do not understand how refund amounts are calculated or why deductions occur, which leads to confusion and mistrust. TrustTrip focuses on **explainability** by simulating a rule-based refund system that clearly shows _how_ and _why_ a refund amount is generated.
 
 ---
 
@@ -12,18 +12,19 @@ Currently, passengers often do not understand how refund amounts are calculated 
 
 trusttrip/
 ├── app/
-│   ├── page.tsx          # Main landing page (UI entry point)
-│   ├── layout.tsx        # Root layout shared across pages
-│   └── api/
-│       └── refund/
-│           └── route.ts  # Backend API route for refund logic
-├── public/               # Static assets (kept minimal)
-├── README.md             # Project documentation
-├── package.json          # Project dependencies and scripts
-├── tsconfig.json         # TypeScript configuration
-└── next.config.js        # Next.js configuration
+│ ├── page.tsx # Main landing page (UI entry point)
+│ ├── layout.tsx # Root layout shared across pages
+│ └── api/
+│ └── refund/
+│ └── route.ts # Backend API route for refund logic
+├── public/ # Static assets (kept minimal)
+├── README.md # Project documentation
+├── package.json # Project dependencies and scripts
+├── tsconfig.json # TypeScript configuration
+└── next.config.js # Next.js configuration
 
 **Explanation:**
+
 - `app/` contains both frontend pages and backend API routes using the Next.js App Router.
 - `app/api/refund/route.ts` serves as the backend entry point for refund-related operations.
 - `public/` is reserved for static assets if required in later sprints.
@@ -55,3 +56,4 @@ This structure helps the team scale the application in future sprints by:
 By starting with a minimal but structured foundation, TrustTrip is well-prepared for iterative feature additions.
 
 ⸻
+```
