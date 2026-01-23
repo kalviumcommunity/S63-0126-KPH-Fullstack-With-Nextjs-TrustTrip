@@ -1,5 +1,5 @@
 # Dependencies
-node_modules
+node_modules/
 
 # Next.js
 .next/
@@ -10,8 +10,8 @@ out/
 !.env.example
 
 # Production
-build
-dist
+build/
+dist/
 
 # Debug
 npm-debug.log*

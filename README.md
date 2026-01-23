@@ -127,7 +127,7 @@ npm run type-check   # Run TypeScript compiler
 
 ---
 
-## 🔐 Environment Variables
+## 🔐 Environment Variables Configuration
 
 ### Setup
 
