@@ -4,15 +4,7 @@
 
 ## 🚌 Project Overview
 
-**TrustTrip** is a web-based transparency system designed to address the lack of clarity in intercity bus ticket cancellation and refund processes. The platform provides passengers with clear, explainable refund calculations, eliminating confusion and building trust through transparency.
 
-### Problem Statement
-Currently, passengers often don't understand:
-- How refund amounts are calculated
-- Why certain deductions occur
-- What factors influence their refund
-
-TrustTrip solves this by implementing a **rule-based refund system** that clearly shows the *how* and *why* behind every refund calculation.
 
 ---
 
@@ -20,30 +12,6 @@ TrustTrip solves this by implementing a **rule-based refund system** that clearl
 
 ```
 trusttrip/
-├── app/                  # Next.js App Router
-│   ├── page.tsx         # Main landing page
-│   ├── layout.tsx       # Root layout component
-│   ├── globals.css      # Global styles
-│   └── api/             # Backend API routes
-│       └── refund/
-│           └── route.ts # Refund calculation API
-├── components/          # Reusable UI components
-│   ├── RefundCalculator.tsx
-│   ├── TicketForm.tsx
-│   └── ResultDisplay.tsx
-├── lib/                 # Utility functions
-│   ├── refundLogic.ts   # Core refund calculation logic
-│   └── types.ts         # TypeScript type definitions
-├── public/              # Static assets
-│   ├── favicon.ico
-│   └── images/
-├── .env.local           # Environment variables
-├── .gitignore          # Git ignore rules
-├── next.config.js      # Next.js configuration
-├── package.json        # Dependencies and scripts
-├── tailwind.config.js  # Tailwind CSS configuration
-└── tsconfig.json       # TypeScript configuration
-```
 
 ---
 
@@ -264,4 +232,3 @@ For support and questions:
 
 ---
 
-**Built with ❤️ for transparent travel experiences**
