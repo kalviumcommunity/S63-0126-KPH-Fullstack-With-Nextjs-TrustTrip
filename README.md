@@ -55,5 +55,54 @@ This structure helps the team scale the application in future sprints by:
 
 By starting with a minimal but structured foundation, TrustTrip is well-prepared for iterative feature additions.
 
+---
+
+## GitHub Workflow
+
+This project follows a standardized GitHub branching and pull-request workflow to ensure smoother collaboration, consistent code quality, and clear version control practices.
+
+### Branching Strategy
+
+We follow a consistent naming convention for branches:
+
+- `feature/<feature-name>` - For new features (e.g., `feature/login-auth`)
+- `fix/<bug-name>` - For bug fixes (e.g., `fix/navbar-alignment`)
+- `chore/<task-name>` - For maintenance tasks (e.g., `chore/update-dependencies`)
+- `docs/<update-name>` - For documentation updates (e.g., `docs/readme-improvements`)
+
+### Pull Request Process
+
+All changes must go through a pull request review process:
+
+1. Create a branch following the naming convention above
+2. Make your changes and commit them
+3. Push your branch to the repository
+4. Create a pull request using our template
+5. Request review from team members
+6. Address any feedback
+7. Merge after approval (protected branch rules apply)
+
+### Code Review Checklist
+
+All reviewers must verify these points before approving a PR:
+
+- [ ] Lint and build pass successfully
+- [ ] No console errors or warnings
+- [ ] Functionality tested locally
+- [ ] Code follows naming conventions and style guidelines
+- [ ] Code follows security best practices
+- [ ] Documentation updated (if applicable)
+- [ ] Tests added/updated (if applicable)
+
+### Branch Protection Rules
+
+The `main` branch is protected with the following rules:
+
+- Required reviews before merge (at least 1 approval)
+- Required passing checks (lint, test, build)
+- Disallowing direct pushes to main
+
+These rules ensure code quality and prevent accidental breaking changes to the main branch.
+
 ⸻
 ```
