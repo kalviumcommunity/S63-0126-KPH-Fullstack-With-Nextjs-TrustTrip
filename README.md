@@ -72,31 +72,45 @@ By starting with a minimal but structured foundation, TrustTrip is well-prepared
 
 ---
 
-<<<<<<< HEAD
 ## GitHub Workflow
 
 This project follows a standardized GitHub branching and pull-request workflow to ensure smoother collaboration, consistent code quality, and clear version control practices.
 
 ### Branching Strategy
 
-We follow a consistent naming convention for branches:
+We follow a consistent naming convention for branches to maintain clarity and organization:
 
 - `feature/<feature-name>` - For new features (e.g., `feature/login-auth`)
 - `fix/<bug-name>` - For bug fixes (e.g., `fix/navbar-alignment`)
 - `chore/<task-name>` - For maintenance tasks (e.g., `chore/update-dependencies`)
 - `docs/<update-name>` - For documentation updates (e.g., `docs/readme-improvements`)
 
+**Example Branch Lifecycle:**
+```bash
+# Create a feature branch
+git checkout -b feature/refund-calculator
+
+# Make your changes, then push
+git add .
+git commit -m "feat: add refund calculation logic"
+git push origin feature/refund-calculator
+
+# Create PR on GitHub and request review
+# After approval, merge using GitHub UI (not direct push)
+```
+
 ### Pull Request Process
 
 All changes must go through a pull request review process:
 
 1. Create a branch following the naming convention above
-2. Make your changes and commit them
+2. Make your changes and commit them with descriptive messages
 3. Push your branch to the repository
-4. Create a pull request using our template
-5. Request review from team members
-6. Address any feedback
-7. Merge after approval (protected branch rules apply)
+4. Create a pull request on GitHub using our [PR template](.github/pull_request_template.md)
+5. Ensure all checks pass (lint, build, tests)
+6. Request review from team members
+7. Address any feedback and push updates
+8. Merge after approval (protected branch rules apply)
 
 ### Code Review Checklist
 
@@ -107,19 +121,33 @@ All reviewers must verify these points before approving a PR:
 - [ ] Functionality tested locally
 - [ ] Code follows naming conventions and style guidelines
 - [ ] Code follows security best practices
-- [ ] Documentation updated (if applicable)
+- [ ] No hardcoded credentials or sensitive data
+- [ ] Comments and documentation are clear
 - [ ] Tests added/updated (if applicable)
+- [ ] No unnecessary dependencies added
 
 ### Branch Protection Rules
 
-The `main` branch is protected with the following rules:
+The `main` branch is protected with the following rules to ensure code quality:
 
-- Required reviews before merge (at least 1 approval)
-- Required passing checks (lint, test, build)
-- Disallowing direct pushes to main
+- **Required Reviews**: At least 1 approval required before merge
+- **Required Checks**: All status checks (lint, build, tests) must pass
+- **Direct Pushes**: Disallowed - all changes must come through PRs
+- **Stale PRs**: Automatically dismiss old reviews if new commits are pushed
+- **Require Branches Up to Date**: Branch must be up to date with main before merging
+
+**Configuration in GitHub:**
+1. Go to Settings → Branches
+2. Add rule for `main` branch
+3. Enable "Require a pull request before merging"
+4. Enable "Require approval reviews" (set to 1)
+5. Enable "Require status checks to pass before merging"
+6. Enable "Require branches to be up to date before merging"
 
 These rules ensure code quality and prevent accidental breaking changes to the main branch.
-=======
+
+---
+
 ## Docker & Docker Compose Setup
 
 This project is containerized to ensure consistent development and production environments across all team members' machines. This eliminates the classic "it works on my machine" problem.
