@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated Prisma client
+    ".prisma/**",
+    "prisma/seed.ts",
+    "prisma/seed.js",
   ]),
   {
     plugins: {

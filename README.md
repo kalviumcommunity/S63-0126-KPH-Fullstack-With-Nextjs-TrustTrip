@@ -59,6 +59,219 @@ npm run start
 
 ---
 
+## Database Setup & Migrations
+
+TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
+
+### Prerequisites
+
+- **PostgreSQL** installed locally or accessible via connection string
+- **Docker** (optional, recommended for local development)
+
+### Starting the Database
+
+If using Docker Compose:
+
+```bash
+# Start PostgreSQL database container
+docker-compose up -d db
+
+# Verify database is running
+docker-compose ps
+```
+
+Or configure your `.env` file with a remote database:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public"
+```
+
+### Creating & Applying Migrations
+
+#### First-Time Setup
+
+When the schema is first created, Prisma generates a migration:
+
+```bash
+# Create the initial migration (only run once)
+npx prisma migrate dev --name init_schema
+```
+
+This command:
+1. Generates the migration SQL file in `prisma/migrations/`
+2. Applies all pending migrations to your database
+3. Generates the Prisma Client for type-safe database access
+
+#### Adding New Models or Fields
+
+When you modify `prisma/schema.prisma`, create a new migration:
+
+```bash
+# Example: Adding a new field or model
+npx prisma migrate dev --name add_project_table
+```
+
+This creates a new timestamped migration folder with the SQL changes.
+
+#### Applying Migrations in Production
+
+Use `migrate deploy` instead of `migrate dev` to safely apply migrations without generating a new schema:
+
+```bash
+npx prisma migrate deploy
+```
+
+### Understanding Migrations
+
+Each migration is stored in `prisma/migrations/` with:
+- **Folder name**: Timestamp + description (e.g., `20260128084603_init_schema/`)
+- **migration.sql**: SQL DDL statements for schema changes
+- **migration_lock.toml**: Lock file to ensure consistency
+
+**Example Migration Structure:**
+```
+prisma/migrations/
+├── 20260128084603_init_schema/
+│   └── migration.sql          # CREATE TABLE, ALTER TABLE statements
+└── 20260128085000_seed_data/
+    └── migration.sql          # INSERT seed records
+```
+
+### Database Schema Overview
+
+The TrustTrip database includes the following models:
+
+- **User**: Traveler and operator profiles
+- **Project**: Trip/travel projects with destination and budget
+- **Review**: User ratings and feedback on projects
+- **Booking**: Trip reservations with pricing
+- **Payment**: Transaction records
+- **Refund**: Refund requests and tracking
+
+For detailed schema, see [prisma/schema.prisma](prisma/schema.prisma).
+
+### Seeding the Database
+
+#### Automatic Seeding After Migration
+
+Seed data is applied through a dedicated migration:
+
+```bash
+# Migrations are applied automatically when running migrate deploy
+npx prisma migrate deploy
+```
+
+The seed migration (`20260128085000_seed_data`) inserts sample data:
+- **5 Users**: Alice, Bob, Carol, David, Emma (with different verified statuses)
+- **4 Projects**: Europe Tour, Asia Backpacking, Japan Experience, Caribbean Escape
+- **4 Reviews**: Various ratings (3-5 stars)
+- **3 Bookings**: Confirmed and pending states
+- **3 Payments**: Different payment methods
+- **1 Refund**: Sample refund request
+
+#### Viewing Seeded Data
+
+Use Prisma Studio to explore the database:
+
+```bash
+npx prisma studio
+```
+
+This opens an interactive UI at `http://localhost:5555` where you can:
+- Browse all tables and records
+- Filter and sort data
+- Edit or delete records manually
+- Export data
+
+### Rolling Back Migrations
+
+#### Reverting the Last Migration
+
+To roll back the most recent migration:
+
+```bash
+# Revert the last migration (removes the schema changes)
+npx prisma migrate resolve --rolled-back <migration-name>
+```
+
+Example:
+```bash
+npx prisma migrate resolve --rolled-back 20260128085000_seed_data
+```
+
+#### Full Database Reset (Development Only)
+
+**⚠️ WARNING**: This deletes all data. Only use in development:
+
+```bash
+# Reset database completely (deletes all data and re-runs all migrations)
+npx prisma migrate reset
+```
+
+### Production Safety Considerations
+
+**Protecting Production Data:**
+
+1. **Staging Environment Testing**
+   - Always test migrations in a staging environment first
+   - Run `npx prisma migrate deploy` in staging before production
+
+2. **Backup Before Migration**
+   ```bash
+   # PostgreSQL backup
+   pg_dump mydb > backup_$(date +%Y%m%d_%H%M%S).sql
+   ```
+
+3. **Review Migration SQL**
+   ```bash
+   # Inspect the SQL before applying
+   cat prisma/migrations/<migration-name>/migration.sql
+   ```
+
+4. **Use Read Replicas**
+   - In production, use read replicas to isolate write locks
+   - Apply migrations during low-traffic windows
+
+5. **Monitor Migration Execution**
+   ```bash
+   # Check migration status
+   npx prisma migrate status
+   ```
+
+6. **Implement CI/CD Guards**
+   - Require code review for schema changes
+   - Automated schema validation in pull requests
+   - Gradual rollout using feature flags
+
+### Troubleshooting
+
+#### Connection Issues
+
+```bash
+# Test database connection
+npx prisma db execute --stdin < /dev/null
+```
+
+#### Out-of-Sync Schema
+
+If your database is out of sync:
+
+```bash
+# Repair the connection
+npx prisma migrate resolve --rolled-back <migration-name>
+npx prisma migrate deploy
+```
+
+#### Generate Updated Client
+
+After schema changes:
+
+```bash
+npx prisma generate
+```
+
+---
+
 ## Reflection
 
 This project follows Next.js best practices by combining frontend and backend logic in a single codebase.

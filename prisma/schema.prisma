@@ -1,0 +1,182 @@
+// This is your Prisma schema file for TrustTrip
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../.prisma/client/default"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model - represents platform users/travelers
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  password      String?
+  profileImage  String?
+  bio           String?
+  phone         String?
+  verified      Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Relations
+  projects      Project[]
+  reviews       Review[]
+  bookings      Booking[]
+  payments      Payment[]
+  refunds       Refund[]
+
+  @@index([email])
+}
+
+// Project model - represents travel trips/projects
+model Project {
+  id            String          @id @default(cuid())
+  title         String
+  description   String?
+  destination   String
+  budget        Float
+  currency      String          @default("USD")
+  startDate     DateTime
+  endDate       DateTime
+  status        ProjectStatus   @default(PLANNING)
+  imageUrl      String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Foreign keys
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  reviews       Review[]
+  bookings      Booking[]
+  payments      Payment[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+// Review model - user reviews for projects/experiences
+model Review {
+  id            String          @id @default(cuid())
+  rating        Int             // 1-5 stars
+  comment       String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Foreign keys
+  userId        String
+  projectId     String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+}
+
+// Booking model - represents trip bookings
+model Booking {
+  id            String          @id @default(cuid())
+  quantity      Int
+  totalPrice    Float
+  status        BookingStatus   @default(PENDING)
+  bookingDate   DateTime        @default(now())
+  checkoutDate  DateTime?
+  canceledAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Foreign keys
+  userId        String
+  projectId     String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  payment       Payment?
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+}
+
+// Payment model - payment records for bookings
+model Payment {
+  id            String          @id @default(cuid())
+  amount        Float
+  currency      String          @default("USD")
+  paymentMethod String          // credit_card, paypal, bank_transfer, etc.
+  transactionId String          @unique
+  status        PaymentStatus   @default(PENDING)
+  paidAt        DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Foreign keys
+  userId        String
+  projectId     String
+  bookingId     String          @unique
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  booking       Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  refund        Refund?
+
+  @@index([status])
+  @@index([userId])
+}
+
+// Refund model - handles refund requests and tracking
+model Refund {
+  id            String          @id @default(cuid())
+  reason        String
+  refundAmount  Float
+  status        RefundStatus    @default(REQUESTED)
+  approvedAt    DateTime?
+  processedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  // Foreign keys
+  paymentId     String          @unique
+  userId        String
+  payment       Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+// Enums
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSED
+  REJECTED
+}
