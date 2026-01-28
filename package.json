@@ -10,6 +10,9 @@
     "format": "prettier --write .",
     "prepare": "husky install"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
       "eslint --fix",
@@ -23,6 +26,7 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@prisma/client": "^7.3.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -34,6 +38,8 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.0.0",
     "prisma": "^6.19.2",
+    "prisma": "^7.3.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
