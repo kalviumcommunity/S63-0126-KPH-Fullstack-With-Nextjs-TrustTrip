@@ -59,6 +59,219 @@ npm run start
 
 ---
 
+## Database Setup & Migrations
+
+TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
+
+### Prerequisites
+
+- **PostgreSQL** installed locally or accessible via connection string
+- **Docker** (optional, recommended for local development)
+
+### Starting the Database
+
+If using Docker Compose:
+
+```bash
+# Start PostgreSQL database container
+docker-compose up -d db
+
+# Verify database is running
+docker-compose ps
+```
+
+Or configure your `.env` file with a remote database:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public"
+```
+
+### Creating & Applying Migrations
+
+#### First-Time Setup
+
+When the schema is first created, Prisma generates a migration:
+
+```bash
+# Create the initial migration (only run once)
+npx prisma migrate dev --name init_schema
+```
+
+This command:
+1. Generates the migration SQL file in `prisma/migrations/`
+2. Applies all pending migrations to your database
+3. Generates the Prisma Client for type-safe database access
+
+#### Adding New Models or Fields
+
+When you modify `prisma/schema.prisma`, create a new migration:
+
+```bash
+# Example: Adding a new field or model
+npx prisma migrate dev --name add_project_table
+```
+
+This creates a new timestamped migration folder with the SQL changes.
+
+#### Applying Migrations in Production
+
+Use `migrate deploy` instead of `migrate dev` to safely apply migrations without generating a new schema:
+
+```bash
+npx prisma migrate deploy
+```
+
+### Understanding Migrations
+
+Each migration is stored in `prisma/migrations/` with:
+- **Folder name**: Timestamp + description (e.g., `20260128084603_init_schema/`)
+- **migration.sql**: SQL DDL statements for schema changes
+- **migration_lock.toml**: Lock file to ensure consistency
+
+**Example Migration Structure:**
+```
+prisma/migrations/
+├── 20260128084603_init_schema/
+│   └── migration.sql          # CREATE TABLE, ALTER TABLE statements
+└── 20260128085000_seed_data/
+    └── migration.sql          # INSERT seed records
+```
+
+### Database Schema Overview
+
+The TrustTrip database includes the following models:
+
+- **User**: Traveler and operator profiles
+- **Project**: Trip/travel projects with destination and budget
+- **Review**: User ratings and feedback on projects
+- **Booking**: Trip reservations with pricing
+- **Payment**: Transaction records
+- **Refund**: Refund requests and tracking
+
+For detailed schema, see [prisma/schema.prisma](prisma/schema.prisma).
+
+### Seeding the Database
+
+#### Automatic Seeding After Migration
+
+Seed data is applied through a dedicated migration:
+
+```bash
+# Migrations are applied automatically when running migrate deploy
+npx prisma migrate deploy
+```
+
+The seed migration (`20260128085000_seed_data`) inserts sample data:
+- **5 Users**: Alice, Bob, Carol, David, Emma (with different verified statuses)
+- **4 Projects**: Europe Tour, Asia Backpacking, Japan Experience, Caribbean Escape
+- **4 Reviews**: Various ratings (3-5 stars)
+- **3 Bookings**: Confirmed and pending states
+- **3 Payments**: Different payment methods
+- **1 Refund**: Sample refund request
+
+#### Viewing Seeded Data
+
+Use Prisma Studio to explore the database:
+
+```bash
+npx prisma studio
+```
+
+This opens an interactive UI at `http://localhost:5555` where you can:
+- Browse all tables and records
+- Filter and sort data
+- Edit or delete records manually
+- Export data
+
+### Rolling Back Migrations
+
+#### Reverting the Last Migration
+
+To roll back the most recent migration:
+
+```bash
+# Revert the last migration (removes the schema changes)
+npx prisma migrate resolve --rolled-back <migration-name>
+```
+
+Example:
+```bash
+npx prisma migrate resolve --rolled-back 20260128085000_seed_data
+```
+
+#### Full Database Reset (Development Only)
+
+**⚠️ WARNING**: This deletes all data. Only use in development:
+
+```bash
+# Reset database completely (deletes all data and re-runs all migrations)
+npx prisma migrate reset
+```
+
+### Production Safety Considerations
+
+**Protecting Production Data:**
+
+1. **Staging Environment Testing**
+   - Always test migrations in a staging environment first
+   - Run `npx prisma migrate deploy` in staging before production
+
+2. **Backup Before Migration**
+   ```bash
+   # PostgreSQL backup
+   pg_dump mydb > backup_$(date +%Y%m%d_%H%M%S).sql
+   ```
+
+3. **Review Migration SQL**
+   ```bash
+   # Inspect the SQL before applying
+   cat prisma/migrations/<migration-name>/migration.sql
+   ```
+
+4. **Use Read Replicas**
+   - In production, use read replicas to isolate write locks
+   - Apply migrations during low-traffic windows
+
+5. **Monitor Migration Execution**
+   ```bash
+   # Check migration status
+   npx prisma migrate status
+   ```
+
+6. **Implement CI/CD Guards**
+   - Require code review for schema changes
+   - Automated schema validation in pull requests
+   - Gradual rollout using feature flags
+
+### Troubleshooting
+
+#### Connection Issues
+
+```bash
+# Test database connection
+npx prisma db execute --stdin < /dev/null
+```
+
+#### Out-of-Sync Schema
+
+If your database is out of sync:
+
+```bash
+# Repair the connection
+npx prisma migrate resolve --rolled-back <migration-name>
+npx prisma migrate deploy
+```
+
+#### Generate Updated Client
+
+After schema changes:
+
+```bash
+npx prisma generate
+```
+
+---
+
 ## Reflection
 
 This project follows Next.js best practices by combining frontend and backend logic in a single codebase.
@@ -69,6 +282,303 @@ This structure helps the team scale the application in future sprints by:
 - Keeping the codebase modular, clean, and maintainable
 
 By starting with a minimal but structured foundation, TrustTrip is well-prepared for iterative feature additions.
+
+---
+
+## Prisma ORM Setup & Database Integration
+
+TrustTrip integrates **Prisma ORM** as the type-safe database access layer for PostgreSQL. This provides a modern, developer-friendly alternative to raw SQL while maintaining full type safety and query validation.
+
+### Database Schema
+
+The application defines four core models with proper relationships and constraints:
+
+#### User Model
+```prisma
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  name      String
+  password  String    // hashed password
+  bio       String?
+  avatar    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  projects  Project[]
+  tasks     Task[]
+  reviews   Review[]
+}
+```
+
+#### Project Model (Trip/Journey)
+```prisma
+model Project {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Float?
+  status      ProjectStatus @default(PLANNING)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  tasks       Task[]
+  reviews     Review[]
+  
+  @@index([userId])
+}
+```
+
+#### Task Model
+```prisma
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  projectId   Int
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  reviews     Review[]
+  
+  @@index([projectId])
+  @@index([userId])
+}
+```
+
+#### Review Model
+```prisma
+model Review {
+  id          Int       @id @default(autoincrement())
+  rating      Int       // 1-5 star rating
+  comment     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  projectId   Int?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  
+  taskId      Int?
+  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([projectId])
+  @@index([taskId])
+}
+```
+
+### Key Schema Features
+
+- **Primary Keys**: Autoincrement integer IDs for simplicity and performance
+- **Foreign Keys**: Proper relationship constraints with `@relation` directives
+- **Cascading Deletes**: User deletion cascades to owned projects and tasks
+- **Timestamps**: Automatic `createdAt` and `updatedAt` tracking
+- **Indexes**: Strategic indexes on frequently queried foreign keys for performance
+- **Enums**: Type-safe status and priority fields
+
+### PostgreSQL Connection
+
+The application connects to PostgreSQL via the `DATABASE_URL` environment variable:
+
+```bash
+# Local development
+DATABASE_URL="postgresql://username:password@localhost:5432/trusttrip_db"
+
+# Production (Vercel Postgres, Railway, etc.)
+DATABASE_URL="postgresql://user:password@host.com:5432/database"
+```
+
+### Prisma Client Setup
+
+The singleton Prisma Client instance is configured in [`lib/prisma.ts`](lib/prisma.ts):
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: ['query', 'info', 'warn', 'error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+export default prisma;
+```
+
+**Why Singleton Pattern?**
+- Prevents multiple Prisma instances during hot reload in development
+- Ensures connection pooling efficiency
+- Reduces database connection overhead
+
+### Example API Routes Using Prisma
+
+#### Fetch All Users
+```typescript
+// GET /api/users
+const users = await prisma.user.findMany({
+  select: { id: true, email: true, name: true, createdAt: true }
+});
+```
+
+#### Create a User
+```typescript
+// POST /api/users
+const user = await prisma.user.create({
+  data: {
+    email: 'user@example.com',
+    name: 'John Doe',
+    password: 'hashed_password_here', // Always hash in production!
+  },
+});
+```
+
+#### Find User with Projects
+```typescript
+// Get a user with all their projects
+const user = await prisma.user.findUnique({
+  where: { id: 1 },
+  include: { projects: true, tasks: true }
+});
+```
+
+#### Complex Query with Relations
+```typescript
+// Get all projects for a user with tasks and reviews
+const projects = await prisma.project.findMany({
+  where: { userId: 1 },
+  include: {
+    tasks: { include: { reviews: true } },
+    reviews: true
+  }
+});
+```
+
+### Database Migration Workflow
+
+```bash
+# Create a new migration after schema changes
+npx prisma migrate dev --name add_new_fields
+
+# Apply migrations in production
+npx prisma migrate deploy
+
+# Seed database with test data
+npx prisma db seed
+
+# View database in visual studio
+npx prisma studio
+```
+
+### Testing the Connection
+
+The application includes test endpoints to verify database connectivity:
+
+**GET `/api/test`** - Basic connection test
+```json
+{
+  "success": true,
+  "message": "Database connection successful!",
+  "data": {
+    "usersCount": 0,
+    "projectsCount": 0,
+    "timestamp": "2026-01-28T10:00:00Z"
+  }
+}
+```
+
+**GET `/api/users`** - List all users
+
+**POST `/api/users`** - Create a new user
+```json
+{
+  "email": "test@example.com",
+  "name": "Test User",
+  "password": "secure_password"
+}
+```
+
+### Type Safety Benefits
+
+With Prisma, all database operations are type-safe:
+
+```typescript
+// TypeScript catches this error at compile time!
+const user = await prisma.user.findUnique({
+  where: { id: 1 }
+});
+
+// user.id is correctly typed as number
+// user.email is correctly typed as string
+// IDE provides full autocomplete
+```
+
+### Advantages Over Raw SQL
+
+| Feature | Prisma | Raw SQL |
+|---------|--------|---------|
+| Type Safety | ✅ Full TypeScript support | ❌ No type checking |
+| IDE Autocomplete | ✅ Full intellisense | ❌ Limited support |
+| SQL Injection Prevention | ✅ Parameterized by default | ⚠️ Requires careful handling |
+| Schema Synchronization | ✅ Auto-generated from schema | ❌ Manual keeping in sync |
+| Migration Tracking | ✅ Built-in versioning | ❌ Manual version control |
+| Multi-Database Support | ✅ PostgreSQL, MySQL, SQLite, etc. | ❌ Database-specific SQL |
+
+**When to Use Raw SQL (with Prisma):**
+- Complex aggregations and GROUP BY queries
+- Custom window functions
+- Performance-critical analytical queries
+
+```typescript
+// Prisma raw SQL for complex queries
+const result = await prisma.$queryRaw`
+  SELECT user_id, COUNT(*) as task_count
+  FROM Task
+  GROUP BY user_id
+  HAVING COUNT(*) > 5
+`;
+```
+
+### Key Learnings: Why Prisma Improves Development Speed
+
+1. **Developer Experience**
+   - Auto-generated types eliminate runtime errors
+   - IDE autocomplete speeds up query writing
+   - Natural JavaScript/TypeScript API feels intuitive
+
+2. **Type Safety**
+   - Compile-time validation of database operations
+   - Safe refactoring with TypeScript checking
+   - Documentation embedded in type definitions
+
+3. **Query Reliability**
+   - Built-in parameterization prevents SQL injection
+   - Proper handling of relationships and foreign keys
+   - Native transaction support for complex operations
+
+4. **Maintainability**
+   - Single source of truth: `schema.prisma`
+   - Clear relationship definitions and constraints
+   - Automatic migration tracking and versioning
 
 ---
 
@@ -525,7 +1035,443 @@ docker system prune -a
 3. **CI/CD Integration** - Automated builds and registry pushes
 4. **Monitoring** - ELK stack or Prometheus for logging and metrics
 5. **Development Hot Reload** - Volume mounts for live code updates
->>>>>>> db4900354b5db96a30776a8011e8ac25ff94d0e9
 
-⸻
+---
+
+## Prisma ORM Integration
+
+### Overview
+
+This project uses **Prisma ORM** as the type-safe database abstraction layer, providing:
+- **Type Safety**: Automatically generated TypeScript types from the database schema
+- **Query Builder**: Intuitive API for database operations without writing raw SQL
+- **Schema Management**: Declarative schema with automatic migrations
+- **Developer Experience**: Prisma Studio for visual database exploration
+
+### Architecture & Setup
+
+#### 1. Installation
+
+Prisma is already installed via npm:
+
+```bash
+npm install prisma --save-dev
+npm install @prisma/client
+```
+
+#### 2. Database Configuration
+
+The PostgreSQL connection string is configured in `.env`:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/trusttrip_db"
+```
+
+**Connection String Format:**
+```
+postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
+```
+
+**Local Development Example:**
+```
+postgresql://postgres:password@localhost:5432/trusttrip_db
+```
+
+**Production (e.g., Vercel Postgres):**
+```
+postgresql://user:password@example.compute-1.amazonaws.com:5432/database
+```
+
+#### 3. Schema Definition
+
+The Prisma schema is defined in `prisma/schema.prisma` with the following models:
+
+**Models Overview:**
+- **User**: Platform users with email authentication
+- **Project**: Trip/project planning entities
+- **Task**: Individual tasks within a project
+- **Review**: User reviews and feedback system
+
+**Key Schema Features:**
+
+```prisma
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique                          // Enforces unique emails
+  name      String
+  password  String    // Always hash in production!
+  bio       String?
+  avatar    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  projects  Project[]  // One-to-many relationship
+  tasks     Task[]     // One-to-many relationship
+  reviews   Review[]   // One-to-many relationship
+}
+
+model Project {
+  id          Int       @id @default(autoincrement())
+  title       String
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Float?
+  status      ProjectStatus @default(PLANNING)  // Enum type
+  
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  tasks       Task[]
+  reviews     Review[]
+  
+  @@index([userId])  // Database index for performance
+}
+
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  
+  projectId   Int
+  userId      Int
+  
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([projectId])
+  @@index([userId])
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+```
+
+### Client Initialization
+
+The Prisma Client is initialized as a singleton in `lib/prisma.ts` to prevent multiple instances in development:
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
+
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: ['query', 'info', 'warn', 'error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+export default prisma;
+```
+
+**Why Singleton Pattern?**
+- Prevents multiple PrismaClient instances in development (which would cause memory leaks)
+- Reuses the same database connection pool
+- Ensures consistent logging across the application
+
+### Usage Examples
+
+#### Get All Users
+```typescript
+import { prisma } from '@/lib/prisma';
+
+const users = await prisma.user.findMany({
+  select: {
+    id: true,
+    email: true,
+    name: true,
+  },
+});
+```
+
+#### Create a User
+```typescript
+const newUser = await prisma.user.create({
+  data: {
+    email: 'john@example.com',
+    name: 'John Doe',
+    password: hashedPassword, // Always hash!
+  },
+});
+```
+
+#### Get User with All Relations
+```typescript
+const userWithRelations = await prisma.user.findUnique({
+  where: { id: 1 },
+  include: {
+    projects: true,
+    tasks: true,
+    reviews: true,
+  },
+});
+```
+
+#### Create Project with Tasks
+```typescript
+const project = await prisma.project.create({
+  data: {
+    title: 'Summer Road Trip',
+    destination: 'California',
+    startDate: new Date('2024-07-01'),
+    endDate: new Date('2024-07-14'),
+    userId: 1,
+    tasks: {
+      create: [
+        { title: 'Book flights', userId: 1 },
+        { title: 'Reserve hotel', userId: 1 },
+      ],
+    },
+  },
+  include: { tasks: true },
+});
+```
+
+### Database Migrations
+
+#### Initialize Database
+```bash
+npx prisma migrate dev --name init
+```
+
+This creates the initial migration and applies it to your PostgreSQL database.
+
+#### Create New Migration
+```bash
+npx prisma migrate dev --name add_avatar_field
+```
+
+#### Apply Existing Migrations
+```bash
+npx prisma migrate deploy
+```
+
+### Prisma Studio (Visual Explorer)
+
+Explore and manage your database visually:
+
+```bash
+npx prisma studio
+```
+
+Opens a browser-based interface at `http://localhost:5555`
+
+### Testing the Connection
+
+A test endpoint is available at `/api/test`:
+
+```bash
+curl http://localhost:3000/api/test
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Database connection successful!",
+  "data": {
+    "usersCount": 5,
+    "projectsCount": 12,
+    "timestamp": "2024-01-28T15:30:45.123Z"
+  }
+}
+```
+
+### API Endpoints Using Prisma
+
+#### List Users
+```bash
+GET /api/users
+```
+
+#### Create User
+```bash
+POST /api/users
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "name": "Jane Doe",
+  "password": "hashedpassword"
+}
+```
+
+### Performance Optimization
+
+#### Database Indexing
+All foreign key relationships have `@@index()` annotations:
+
+```prisma
+model Task {
+  // ... fields ...
+  @@index([projectId])
+  @@index([userId])
+}
+```
+
+These indexes improve query performance for:
+- Filtering by projectId: `findMany({ where: { projectId: 1 } })`
+- Filtering by userId: `findMany({ where: { userId: 1 } })`
+
+#### Pagination Example
+```typescript
+const users = await prisma.user.findMany({
+  skip: 10,        // Skip first 10
+  take: 20,        // Take next 20
+  orderBy: { createdAt: 'desc' },
+});
+```
+
+### Best Practices
+
+1. **Always Hash Passwords**
+   ```typescript
+   import bcrypt from 'bcryptjs';
+   const hashedPassword = await bcrypt.hash(password, 10);
+   ```
+
+2. **Use Transactions for Related Operations**
+   ```typescript
+   const result = await prisma.$transaction([
+     prisma.user.create({ data: userData }),
+     prisma.project.create({ data: projectData }),
+   ]);
+   ```
+
+3. **Select Only Needed Fields**
+   ```typescript
+   // Good: Only select needed fields
+   const user = await prisma.user.findUnique({
+     where: { id: 1 },
+     select: { id: true, email: true, name: true },
+   });
+   ```
+
+4. **Handle Null Relations Properly**
+   ```typescript
+   model Review {
+     taskId Int?
+     task Task? @relation(fields: [taskId], references: [id])
+   }
+   ```
+
+### Troubleshooting
+
+#### Connection Failed
+```
+Error: Can't reach database server
+```
+
+**Solutions:**
+1. Verify `DATABASE_URL` in `.env` matches PostgreSQL settings
+2. Check PostgreSQL is running: `docker ps` or check local installation
+3. Test connection: `psql -c "SELECT 1"`
+
+#### Type Generation Issues
+```
+Error: PrismaClient is not available
+```
+
+**Solution:**
+```bash
+npx prisma generate
+npm install
+npm run build
+```
+
+#### Migration Conflicts
+```
+Error: Migration <name> already exists
+```
+
+**Solution:**
+```bash
+# Reset database (deletes all data)
+npx prisma migrate reset
+```
+
+### Advantages Over Raw SQL
+
+**Prisma vs Raw SQL:**
+
+| Feature | Prisma | Raw SQL |
+|---------|--------|---------|
+| Type Safety | ✅ Full TypeScript support | ❌ No type checking |
+| IDE Autocomplete | ✅ Full intellisense | ❌ Limited support |
+| SQL Injection | ✅ Parameterized queries | ⚠️ Risk if not careful |
+| Schema Sync | ✅ Auto-generated from schema | ❌ Manual keeping in sync |
+| Migration Tracking | ✅ Built-in versioning | ❌ Manual version control |
+| Multi-DB Support | ✅ PostgreSQL, MySQL, SQLite, etc. | ❌ Database-specific SQL |
+
+**When to Use Raw SQL (with Prisma):**
+```typescript
+// For complex queries with aggregations
+const result = await prisma.$queryRaw`
+  SELECT user_id, COUNT(*) as task_count
+  FROM Task
+  GROUP BY user_id
+  HAVING COUNT(*) > 5
+`;
+```
+
+### Reflection & Learning Outcomes
+
+#### Benefits Achieved
+
+1. **Development Speed**
+   - Generated types eliminate runtime errors
+   - Autocomplete reduces debugging time
+   - Natural API feels like working with native JavaScript objects
+
+2. **Type Safety**
+   - Catch database schema mismatches at compile time
+   - Refactoring is safe with TypeScript checking
+   - Documentation is embedded in type definitions
+
+3. **Query Reliability**
+   - Built-in parameterization prevents SQL injection
+   - Proper relationship handling with foreign keys
+   - Transaction support for complex operations
+
+4. **Maintainability**
+   - Single source of truth (schema.prisma)
+   - Easy to understand relationships and constraints
+   - Clear audit trail with migrations
+
+#### Challenges & Solutions
+
+1. **Learning Curve**
+   - Solution: Prisma docs are excellent; reference query patterns
+
+2. **Performance Considerations**
+   - Always add `@@index()` for frequently queried fields
+   - Use `.select()` to avoid fetching unnecessary data
+
+3. **Migration Conflicts in Teams**
+   - Solution: Regularly sync and resolve conflicts early
+
+---
 ```
