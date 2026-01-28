@@ -1,0 +1,199 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User entity - represents customers using the bus booking system
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  firstName   String
+  lastName    String
+  phoneNumber String    @unique
+  dateOfBirth DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  bookings Booking[]
+  refunds  Refund[]
+
+  @@index([email])
+  @@index([phoneNumber])
+  @@map("users")
+}
+
+// Bus entity - represents different buses in the fleet
+model Bus {
+  id        String   @id @default(cuid())
+  busNumber String   @unique
+  capacity  Int
+  busType   BusType
+  amenities String[] // Array of amenities like AC, WiFi, etc.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  routes Route[]
+
+  @@index([busNumber])
+  @@index([busType])
+  @@map("buses")
+}
+
+// Route entity - represents bus routes between cities
+model Route {
+  id                String   @id @default(cuid())
+  routeCode         String   @unique
+  departureCity     String
+  arrivalCity       String
+  distance          Float // in kilometers
+  estimatedDuration Int // in minutes
+  basePrice         Float // base ticket price for this route
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relationships
+  bus       Bus        @relation(fields: [busId], references: [id], onDelete: Cascade)
+  busId     String
+  schedules Schedule[]
+
+  @@index([routeCode])
+  @@index([departureCity])
+  @@index([arrivalCity])
+  @@index([busId])
+  @@map("routes")
+}
+
+// Schedule entity - represents scheduled trips for routes
+model Schedule {
+  id              String         @id @default(cuid())
+  departureTime   DateTime
+  arrivalTime     DateTime
+  availableSeats  Int
+  priceMultiplier Float          @default(1.0) // multiplier applied to base route price
+  status          ScheduleStatus @default(SCHEDULED)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relationships
+  route    Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  routeId  String
+  bookings Booking[]
+
+  @@index([departureTime])
+  @@index([status])
+  @@index([routeId])
+  @@map("schedules")
+}
+
+// Booking entity - represents ticket bookings
+model Booking {
+  id             String        @id @default(cuid())
+  bookingNumber  String        @unique
+  seatNumber     String
+  passengerName  String
+  passengerPhone String
+  ticketPrice    Float
+  bookingStatus  BookingStatus @default(CONFIRMED)
+  bookedAt       DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relationships
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId String
+  refund     Refund?
+
+  @@index([bookingNumber])
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([bookingStatus])
+  @@map("bookings")
+}
+
+// Refund entity - represents refund requests and calculations
+model Refund {
+  id                  String       @id @default(cuid())
+  refundNumber        String       @unique
+  originalAmount      Float // original ticket price
+  refundAmount        Float // final refund amount after deductions
+  processingFee       Float // fixed processing fee
+  cancellationFee     Float // time-based cancellation fee
+  deductionPercentage Float // percentage deducted based on timing
+  refundReason        String? // optional reason for refund
+  refundStatus        RefundStatus @default(PENDING)
+  requestedAt         DateTime     @default(now())
+  processedAt         DateTime?
+  completedAt         DateTime?
+
+  // Detailed breakdown for transparency
+  hoursBeforeDeparture Int // hours between refund request and departure
+  appliedRule          RefundRule // which refund rule was applied
+
+  // Relationships
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String  @unique
+
+  @@index([refundNumber])
+  @@index([userId])
+  @@index([refundStatus])
+  @@index([requestedAt])
+  @@map("refunds")
+}
+
+// Enums for type safety and data consistency
+enum BusType {
+  STANDARD
+  PREMIUM
+  LUXURY
+  SLEEPER
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  BOARDING
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+  DELAYED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+  NO_SHOW
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  APPROVED
+  COMPLETED
+  REJECTED
+}
+
+enum RefundRule {
+  STANDARD_24H_PLUS // 5% deduction (24+ hours before)
+  STANDARD_12_24H // 15% deduction (12-24 hours)
+  STANDARD_6_12H // 25% deduction (6-12 hours)
+  STANDARD_UNDER_6H // 50% deduction (less than 6 hours)
+  PREMIUM_24H_PLUS // 3% deduction for premium tickets
+  PREMIUM_12_24H // 10% deduction for premium tickets
+  PREMIUM_6_12H // 20% deduction for premium tickets
+  PREMIUM_UNDER_6H // 35% deduction for premium tickets
+  NO_REFUND // No refund allowed
+}
