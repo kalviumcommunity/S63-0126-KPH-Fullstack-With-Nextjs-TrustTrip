@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+// User model for platform users
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  name      String
+  password  String    // hashed password
+  bio       String?
+  avatar    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  projects  Project[]
+  tasks     Task[]
+  reviews   Review[]
+}
+
+// Project model for trips/projects
+model Project {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Float?
+  status      ProjectStatus @default(PLANNING)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Foreign key
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  tasks       Task[]
+  reviews     Review[]
+
+  @@index([userId])
+}
+
+// Task model for project tasks
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Foreign keys
+  projectId   Int
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  reviews     Review[]
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+// Review model for user reviews/feedback
+model Review {
+  id          Int       @id @default(autoincrement())
+  rating      Int       // 1-5 star rating
+  comment     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Foreign keys
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId   Int?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  taskId      Int?
+  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([taskId])
+}
+
+// Enums for status fields
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
