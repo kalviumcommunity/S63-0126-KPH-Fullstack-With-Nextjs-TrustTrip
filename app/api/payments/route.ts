@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/refunds - List all refunds with pagination and filtering
+// GET /api/payments - List all payments with pagination and filtering
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
 
     // Filter parameters
     const userId = searchParams.get("userId");
+    const projectId = searchParams.get("projectId");
     const status = searchParams.get("status");
 
     // Sorting
@@ -26,13 +27,14 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     if (userId) where.userId = userId;
+    if (projectId) where.projectId = projectId;
     if (status) where.status = status;
 
     // Get total count for pagination
-    const total = await prisma.refund.count({ where });
+    const total = await prisma.payment.count({ where });
 
-    // Fetch refunds
-    const refunds = await prisma.refund.findMany({
+    // Fetch payments
+    const payments = await prisma.payment.findMany({
       where,
       skip,
       take: limit,
@@ -41,20 +43,21 @@ export async function GET(request: NextRequest) {
         user: {
           select: { id: true, name: true, email: true },
         },
-        payment: {
-          select: {
-            id: true,
-            amount: true,
-            transactionId: true,
-            status: true,
-          },
+        project: {
+          select: { id: true, title: true, destination: true },
+        },
+        booking: {
+          select: { id: true, quantity: true, totalPrice: true },
+        },
+        refund: {
+          select: { id: true, status: true, refundAmount: true },
         },
       },
     });
 
     return NextResponse.json({
       success: true,
-      data: refunds,
+      data: payments,
       pagination: {
         page,
         limit,
@@ -65,25 +68,36 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error fetching refunds:", error);
+    console.error("Error fetching payments:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch refunds" },
+      { success: false, error: "Failed to fetch payments" },
       { status: 500 }
     );
   }
 }
 
-// POST /api/refunds - Create a new refund request
+// POST /api/payments - Create a new payment
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { reason, paymentId, userId } = body;
+    const {
+      amount,
+      currency,
+      paymentMethod,
+      transactionId,
+      userId,
+      projectId,
+      bookingId,
+    } = body;
 
     // Validate required fields
     const errors: string[] = [];
-    if (!reason) errors.push("reason is required");
-    if (!paymentId) errors.push("paymentId is required");
+    if (!amount) errors.push("amount is required");
+    if (!paymentMethod) errors.push("paymentMethod is required");
+    if (!transactionId) errors.push("transactionId is required");
     if (!userId) errors.push("userId is required");
+    if (!projectId) errors.push("projectId is required");
+    if (!bookingId) errors.push("bookingId is required");
 
     if (errors.length > 0) {
       return NextResponse.json(
@@ -104,73 +118,74 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if payment exists
-    const payment = await prisma.payment.findUnique({
-      where: { id: paymentId },
-      include: {
-        refund: true,
-      },
+    // Check if booking exists
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
     });
 
-    if (!payment) {
+    if (!booking) {
       return NextResponse.json(
-        { success: false, error: "Payment not found" },
+        { success: false, error: "Booking not found" },
         { status: 404 }
       );
     }
 
-    // Check if payment already has a refund
-    if (payment.refund) {
+    // Check if transactionId is unique
+    const existingPayment = await prisma.payment.findUnique({
+      where: { transactionId },
+    });
+
+    if (existingPayment) {
       return NextResponse.json(
-        { success: false, error: "This payment already has a refund request" },
+        { success: false, error: "Transaction ID already exists" },
         { status: 409 }
       );
     }
 
-    // Check if payment is completed
-    if (payment.status !== "COMPLETED") {
-      return NextResponse.json(
-        { success: false, error: "Only completed payments can be refunded" },
-        { status: 400 }
-      );
-    }
-
-    // Create the refund request
-    const refund = await prisma.refund.create({
+    // Create the payment
+    const payment = await prisma.payment.create({
       data: {
-        reason,
-        refundAmount: payment.amount,
-        paymentId,
+        amount: parseFloat(amount),
+        currency: currency || "USD",
+        paymentMethod,
+        transactionId,
         userId,
-        status: "REQUESTED",
+        projectId,
+        bookingId,
+        status: "COMPLETED",
+        paidAt: new Date(),
       },
       include: {
         user: {
           select: { id: true, name: true, email: true },
         },
-        payment: {
-          select: {
-            id: true,
-            amount: true,
-            transactionId: true,
-            status: true,
-          },
+        project: {
+          select: { id: true, title: true, destination: true },
+        },
+        booking: {
+          select: { id: true, quantity: true, totalPrice: true },
         },
       },
+    });
+
+    // Update booking status to CONFIRMED
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: "CONFIRMED" },
     });
 
     return NextResponse.json(
       {
         success: true,
-        data: refund,
-        message: "Refund request created successfully",
+        data: payment,
+        message: "Payment created successfully",
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error creating refund:", error);
+    console.error("Error creating payment:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to create refund request" },
+      { success: false, error: "Failed to create payment" },
       { status: 500 }
     );
   }

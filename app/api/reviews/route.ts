@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/refunds - List all refunds with pagination and filtering
+// GET /api/reviews - List all reviews with pagination and filtering
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
 
     // Filter parameters
     const userId = searchParams.get("userId");
-    const status = searchParams.get("status");
+    const projectId = searchParams.get("projectId");
+    const minRating = searchParams.get("minRating");
+    const maxRating = searchParams.get("maxRating");
 
     // Sorting
     const sortBy = searchParams.get("sortBy") || "createdAt";
@@ -26,13 +28,20 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     if (userId) where.userId = userId;
-    if (status) where.status = status;
+    if (projectId) where.projectId = projectId;
+    if (minRating || maxRating) {
+      where.rating = {};
+      if (minRating)
+        (where.rating as Record<string, number>).gte = Number(minRating);
+      if (maxRating)
+        (where.rating as Record<string, number>).lte = Number(maxRating);
+    }
 
     // Get total count for pagination
-    const total = await prisma.refund.count({ where });
+    const total = await prisma.review.count({ where });
 
-    // Fetch refunds
-    const refunds = await prisma.refund.findMany({
+    // Fetch reviews
+    const reviews = await prisma.review.findMany({
       where,
       skip,
       take: limit,
@@ -41,20 +50,15 @@ export async function GET(request: NextRequest) {
         user: {
           select: { id: true, name: true, email: true },
         },
-        payment: {
-          select: {
-            id: true,
-            amount: true,
-            transactionId: true,
-            status: true,
-          },
+        project: {
+          select: { id: true, title: true, destination: true },
         },
       },
     });
 
     return NextResponse.json({
       success: true,
-      data: refunds,
+      data: reviews,
       pagination: {
         page,
         limit,
@@ -65,25 +69,27 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error fetching refunds:", error);
+    console.error("Error fetching reviews:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch refunds" },
+      { success: false, error: "Failed to fetch reviews" },
       { status: 500 }
     );
   }
 }
 
-// POST /api/refunds - Create a new refund request
+// POST /api/reviews - Create a new review
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { reason, paymentId, userId } = body;
+    const { rating, comment, userId, projectId } = body;
 
     // Validate required fields
     const errors: string[] = [];
-    if (!reason) errors.push("reason is required");
-    if (!paymentId) errors.push("paymentId is required");
+    if (!rating) errors.push("rating is required");
+    if (rating && (rating < 1 || rating > 5))
+      errors.push("rating must be between 1 and 5");
     if (!userId) errors.push("userId is required");
+    if (!projectId) errors.push("projectId is required");
 
     if (errors.length > 0) {
       return NextResponse.json(
@@ -104,57 +110,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if payment exists
-    const payment = await prisma.payment.findUnique({
-      where: { id: paymentId },
-      include: {
-        refund: true,
-      },
+    // Check if project exists
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
     });
 
-    if (!payment) {
+    if (!project) {
       return NextResponse.json(
-        { success: false, error: "Payment not found" },
+        { success: false, error: "Project not found" },
         { status: 404 }
       );
     }
 
-    // Check if payment already has a refund
-    if (payment.refund) {
+    // Check for duplicate review (user can only review a project once)
+    const existingReview = await prisma.review.findUnique({
+      where: {
+        userId_projectId: {
+          userId,
+          projectId,
+        },
+      },
+    });
+
+    if (existingReview) {
       return NextResponse.json(
-        { success: false, error: "This payment already has a refund request" },
+        { success: false, error: "You have already reviewed this project" },
         { status: 409 }
       );
     }
 
-    // Check if payment is completed
-    if (payment.status !== "COMPLETED") {
-      return NextResponse.json(
-        { success: false, error: "Only completed payments can be refunded" },
-        { status: 400 }
-      );
-    }
-
-    // Create the refund request
-    const refund = await prisma.refund.create({
+    // Create the review
+    const review = await prisma.review.create({
       data: {
-        reason,
-        refundAmount: payment.amount,
-        paymentId,
+        rating,
+        comment,
         userId,
-        status: "REQUESTED",
+        projectId,
       },
       include: {
         user: {
           select: { id: true, name: true, email: true },
         },
-        payment: {
-          select: {
-            id: true,
-            amount: true,
-            transactionId: true,
-            status: true,
-          },
+        project: {
+          select: { id: true, title: true, destination: true },
         },
       },
     });
@@ -162,15 +160,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        data: refund,
-        message: "Refund request created successfully",
+        data: review,
+        message: "Review created successfully",
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error creating refund:", error);
+    console.error("Error creating review:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to create refund request" },
+      { success: false, error: "Failed to create review" },
       { status: 500 }
     );
   }
