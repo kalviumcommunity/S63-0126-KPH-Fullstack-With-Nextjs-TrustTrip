@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createUserSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/users - List all users with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -45,13 +52,6 @@ export async function GET(request: NextRequest) {
       skip,
       take: limit,
       orderBy: { [sortBy]: sortOrder },
-import { prisma } from '@/lib/prisma';
-import { NextRequest, NextResponse } from 'next/server';
-
-// GET - Fetch all users
-export async function GET() {
-  try {
-    const users = await prisma.user.findMany({
       select: {
         id: true,
         email: true,
@@ -65,7 +65,6 @@ export async function GET() {
         _count: {
           select: { projects: true, reviews: true, bookings: true },
         },
-        createdAt: true,
       },
     });
 
@@ -83,46 +82,18 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Error fetching users:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch users" },
-      count: users.length,
-    });
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch users' },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to fetch users");
   }
 }
 
-// POST /api/users - Create a new user
+// POST /api/users - Create a new user with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, name, password, bio, phone, profileImage } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!email) errors.push("email is required");
-    if (!name) errors.push("name is required");
-    if (!password) errors.push("password is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-// POST - Create a new user
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { email, name, password } = body;
-
-    if (!email || !name || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
+    
+    // Validate request body using Zod schema
+    const validatedData = createUserSchema.parse(body);
+    const { email, name, password, bio, phone, profileImage } = validatedData;
 
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
@@ -130,14 +101,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
-      return NextResponse.json(
-        { success: false, error: "Email already in use" },
-        { status: 409 }
-      );
+      return createErrorResponse("Email already in use", 409);
     }
 
     // Create the user (Note: In production, always hash passwords!)
-    // In production, hash the password!
     const user = await prisma.user.create({
       data: {
         email,
@@ -149,31 +116,27 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          verified: user.verified,
-          createdAt: user.createdAt,
-        },
-        message: "User created successfully",
-        data: user,
-        message: 'User created successfully',
-      },
-      { status: 201 }
-    );
+    // Return user data without password
+    const userData = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      profileImage: user.profileImage,
+      bio: user.bio,
+      phone: user.phone,
+      verified: user.verified,
+      createdAt: user.createdAt,
+    };
+
+    return createSuccessResponse(userData, "User created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating user:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create user" },
-    console.error('Error creating user:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create user' },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create user");
   }
 }
 

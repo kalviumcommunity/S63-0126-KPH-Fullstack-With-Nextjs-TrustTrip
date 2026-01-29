@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createProjectSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/projects - List all projects with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -53,7 +60,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, name: true, email: true },
         },
         _count: {
-          select: { tasks: true, reviews: true, bookings: true },
+          select: { reviews: true, bookings: true },
         },
       },
     });
@@ -79,10 +86,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/projects - Create a new project
+// POST /api/projects - Create a new project with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    
+    // Validate request body using Zod schema
+    const validatedData = createProjectSchema.parse(body);
     const {
       title,
       description,
@@ -93,22 +103,7 @@ export async function POST(request: NextRequest) {
       currency,
       userId,
       imageUrl,
-    } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!title) errors.push("title is required");
-    if (!destination) errors.push("destination is required");
-    if (!startDate) errors.push("startDate is required");
-    if (!endDate) errors.push("endDate is required");
-    if (!userId) errors.push("userId is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
-      );
-    }
+    } = validatedData;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -116,10 +111,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("User not found", 404);
     }
 
     // Create the project
@@ -128,10 +120,10 @@ export async function POST(request: NextRequest) {
         title,
         description,
         destination,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        budget: budget ? parseFloat(budget) : null,
-        currency: currency || "USD",
+        startDate,
+        endDate,
+        budget: budget || 0,
+        currency,
         userId,
         imageUrl,
       },
@@ -142,20 +134,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: project,
-        message: "Project created successfully",
-      },
-      { status: 201 }
-    );
+    return createSuccessResponse(project, "Project created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating project:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create project" },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create project");
   }
 }
 
