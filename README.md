@@ -1,4 +1,4 @@
-# TrustTrip
+t pu# TrustTrip
 
 ## Project Title & Problem Statement
 
@@ -12,21 +12,48 @@ Currently, passengers often do not understand how refund amounts are calculated 
 
 trusttrip/
 ├── app/
-│ ├── page.tsx # Main landing page (UI entry point)
-│ ├── layout.tsx # Root layout shared across pages
-│ └── api/
-│ └── refund/
-│ └── route.ts # Backend API route for refund logic
-├── public/ # Static assets (kept minimal)
-├── README.md # Project documentation
-├── package.json # Project dependencies and scripts
-├── tsconfig.json # TypeScript configuration
-└── next.config.js # Next.js configuration
+│   ├── page.tsx                # Main landing page (UI entry point)
+│   ├── layout.tsx              # Root layout shared across pages
+│   ├── globals.css             # Global styles
+│   ├── page.module.css         # Page-specific styles
+│   └── api/                    # Backend API routes
+│       ├── users/
+│       │   └── route.ts        # User management endpoints
+│       ├── projects/
+│       │   └── route.ts        # Travel project endpoints
+│       ├── bookings/
+│       │   └── route.ts        # Booking management endpoints
+│       ├── payments/
+│       │   └── route.ts        # Payment processing endpoints
+│       ├── refunds/
+│       │   └── route.ts        # Refund request endpoints
+│       ├── reviews/
+│       │   └── route.ts        # Review/submission endpoints
+│       └── test/
+│           └── route.ts        # Database connection test
+├── public/                     # Static assets
+├── lib/
+│   └── prisma.ts               # Prisma client singleton
+├── prisma/
+│   ├── schema.prisma           # Database schema definition
+│   ├── migrations/             # Database migrations
+│   └── seed.ts                 # Database seeding
+├── notes/                      # Project notes and documentation
+├── .github/                    # GitHub configuration
+├── docker-compose.yml          # Docker services configuration
+├── Dockerfile                  # Next.js app containerization
+├── package.json                # Project dependencies
+├── tsconfig.json               # TypeScript configuration
+├── next.config.ts              # Next.js configuration
+└── README.md                   # Project documentation
 
 **Explanation:**
 
 - `app/` contains both frontend pages and backend API routes using the Next.js App Router.
-- `app/api/refund/route.ts` serves as the backend entry point for refund-related operations.
+- `app/api/` contains all RESTful API endpoints organized by resource type.
+- Each route file handles multiple HTTP verbs (GET, POST) for its corresponding resource.
+- `lib/prisma.ts` provides the Prisma client singleton for database access.
+- `prisma/schema.prisma` defines the database models and relationships.
 - `public/` is reserved for static assets if required in later sprints.
 - Configuration files ensure consistency and scalability as the project grows.
 
@@ -59,6 +86,58 @@ npm run start
 
 ---
 
+## API Reference
+
+TrustTrip provides a comprehensive RESTful API for managing all platform resources. The API is organized following REST conventions with proper HTTP verbs, pagination, and error handling.
+
+### API Endpoints
+
+| Resource | Endpoint | Methods | Description |
+|----------|----------|---------|-------------|
+| Users | `/api/users` | GET, POST | User management |
+| Projects | `/api/projects` | GET, POST | Travel project management |
+| Bookings | `/api/bookings` | GET, POST | Booking management |
+| Payments | `/api/payments` | GET, POST | Payment processing |
+| Refunds | `/api/refunds` | GET, POST | Refund request handling |
+| Reviews | `/api/reviews` | GET, POST | Review submissions |
+| Test | `/api/test` | GET | Database connection test |
+
+### Key Features
+
+- **Pagination**: All list endpoints support `page` and `limit` query parameters
+- **Filtering**: Filter results by various attributes (userId, status, etc.)
+- **Sorting**: Sort results by different fields with ascending/descending order
+- **Error Handling**: Consistent error responses with meaningful HTTP status codes
+
+### Detailed Documentation
+
+For complete API documentation including:
+- All endpoints and their parameters
+- Request/response examples
+- Curl commands for testing
+- Error response formats
+- Pagination details
+
+See the comprehensive [API Documentation](API_DOCUMENTATION.md).
+
+### Quick Start
+
+**List users with pagination:**
+```bash
+curl -X GET "http://localhost:3000/api/users?page=1&limit=10"
+```
+
+**Create a new user:**
+```bash
+curl -X POST "http://localhost:3000/api/users" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","name":"John Doe","password":"secure123"}'
+```
+
+**Test database connection:**
+```bash
+curl -X GET "http://localhost:3000/api/test"
+```
 ## Database Setup & Migrations
 
 TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
