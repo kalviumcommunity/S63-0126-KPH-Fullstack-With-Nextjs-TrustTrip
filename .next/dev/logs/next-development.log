@@ -1,6 +1,0 @@
-[00:00:00.736] Server  LOG     ✓ Ready in 561ms
-[00:00:07.732] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[24:09:06.145] Server  ERROR   Error: ENOENT: no such file or directory, scandir '/Users/hasan/s63-0126-kph-fullstack-with-nextjs-trusttrip/app'
-[24:09:06.150] Server  ERROR   ⨯ "unhandledRejection:" Error: ENOENT: no such file or directory, scandir '/Users/hasan/s63-0126-kph-fullstack-with-nextjs-trusttrip/app'
-[24:09:06.154] Server  ERROR   ⨯ "unhandledRejection: " Error: ENOENT: no such file or directory, scandir '/Users/hasan/s63-0126-kph-fullstack-with-nextjs-trusttrip/app'
-[24:09:06.181] Server  LOG     ✓ Compiled in 229ms

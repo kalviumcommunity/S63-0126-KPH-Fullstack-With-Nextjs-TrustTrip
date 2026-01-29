@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createBookingSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/bookings - List all bookings with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -73,25 +80,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/bookings - Create a new booking
+// POST /api/bookings - Create a new booking with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { quantity, totalPrice, userId, projectId } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!quantity) errors.push("quantity is required");
-    if (!totalPrice) errors.push("totalPrice is required");
-    if (!userId) errors.push("userId is required");
-    if (!projectId) errors.push("projectId is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
-      );
-    }
+    
+    // Validate request body using Zod schema
+    const validatedData = createBookingSchema.parse(body);
+    const { quantity, totalPrice, userId, projectId } = validatedData;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -99,10 +95,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("User not found", 404);
     }
 
     // Check if project exists
@@ -111,17 +104,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (!project) {
-      return NextResponse.json(
-        { success: false, error: "Project not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("Project not found", 404);
     }
 
     // Create the booking
     const booking = await prisma.booking.create({
       data: {
-        quantity: Number(quantity),
-        totalPrice: parseFloat(totalPrice),
+        quantity,
+        totalPrice,
         userId,
         projectId,
       },
@@ -135,20 +125,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: booking,
-        message: "Booking created successfully",
-      },
-      { status: 201 }
-    );
+    return createSuccessResponse(booking, "Booking created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating booking:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create booking" },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create booking");
   }
 }
 

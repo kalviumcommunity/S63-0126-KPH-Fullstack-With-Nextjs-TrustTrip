@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createReviewSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/reviews - List all reviews with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -77,26 +84,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/reviews - Create a new review
+// POST /api/reviews - Create a new review with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { rating, comment, userId, projectId } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!rating) errors.push("rating is required");
-    if (rating && (rating < 1 || rating > 5))
-      errors.push("rating must be between 1 and 5");
-    if (!userId) errors.push("userId is required");
-    if (!projectId) errors.push("projectId is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
-      );
-    }
+    
+    // Validate request body using Zod schema
+    const validatedData = createReviewSchema.parse(body);
+    const { rating, comment, userId, projectId } = validatedData;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -104,10 +99,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("User not found", 404);
     }
 
     // Check if project exists
@@ -116,10 +108,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!project) {
-      return NextResponse.json(
-        { success: false, error: "Project not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("Project not found", 404);
     }
 
     // Check for duplicate review (user can only review a project once)
@@ -133,10 +122,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingReview) {
-      return NextResponse.json(
-        { success: false, error: "You have already reviewed this project" },
-        { status: 409 }
-      );
+      return createErrorResponse("You have already reviewed this project", 409);
     }
 
     // Create the review
@@ -157,20 +143,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: review,
-        message: "Review created successfully",
-      },
-      { status: 201 }
-    );
+    return createSuccessResponse(review, "Review created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating review:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create review" },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create review");
   }
 }
 
