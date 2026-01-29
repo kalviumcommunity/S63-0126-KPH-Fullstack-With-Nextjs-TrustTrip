@@ -138,6 +138,179 @@ curl -X POST "http://localhost:3000/api/users" \
 ```bash
 curl -X GET "http://localhost:3000/api/test"
 ```
+
+## Input Validation with Zod
+
+TrustTrip implements comprehensive **runtime input validation** using **Zod** for all POST API endpoints. This ensures data integrity, prevents invalid data from reaching the database, and provides clear, actionable error messages to API consumers.
+
+### Why Input Validation Matters
+
+In team projects, robust input validation is critical for:
+
+- **Data Integrity**: Prevents corrupt or invalid data from entering the system
+- **Security**: Blocks malicious payloads and injection attacks  
+- **User Experience**: Provides clear error messages instead of cryptic database errors
+- **Team Productivity**: Catches integration issues early in development
+- **API Reliability**: Ensures consistent behavior across all endpoints
+- **Documentation**: Validation schemas serve as living API documentation
+
+### Validation Architecture
+
+#### Shared Schema Location
+All validation schemas are centralized in `lib/schemas/api-schemas.ts`:
+
+```typescript
+// Example: User creation schema
+export const createUserSchema = z.object({
+  email: z.string().email("Please provide a valid email address"),
+  name: z.string().min(2, "Name must be at least 2 characters long"),
+  password: z.string().min(6, "Password must be at least 6 characters long"),
+  bio: z.string().max(500, "Bio must be less than 500 characters").optional(),
+  phone: z.string().regex(/^\+?[\d\s-()]+$/, "Please provide a valid phone number").optional(),
+});
+```
+
+#### Error Response Structure
+All validation errors follow a consistent format:
+
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "email",
+      "message": "Please provide a valid email address"
+    },
+    {
+      "field": "name", 
+      "message": "Name must be at least 2 characters long"
+    }
+  ]
+}
+```
+
+### Validation Rules by Endpoint
+
+#### POST /api/users
+- **email**: Required, valid email format
+- **name**: Required, 2-100 characters
+- **password**: Required, 6-100 characters
+- **bio**: Optional, max 500 characters
+- **phone**: Optional, valid phone number format
+- **profileImage**: Optional, valid URL format
+
+#### POST /api/projects
+- **title**: Required, 3-200 characters
+- **destination**: Required, 2-100 characters  
+- **startDate**: Required, valid date, must be in future
+- **endDate**: Required, valid date, must be after startDate
+- **budget**: Optional, positive number, max $1,000,000
+- **currency**: Optional, valid 3-letter currency code (default: USD)
+- **userId**: Required, valid CUID format
+
+#### POST /api/bookings
+- **quantity**: Required, positive integer, max 50
+- **totalPrice**: Required, positive number, max $100,000
+- **userId**: Required, valid CUID format
+- **projectId**: Required, valid CUID format
+
+#### POST /api/payments
+- **amount**: Required, positive number, max $100,000
+- **paymentMethod**: Required, one of: credit_card, debit_card, paypal, bank_transfer, cash
+- **transactionId**: Required, 10-100 characters, must be unique
+- **currency**: Optional, valid 3-letter currency code
+- **userId**, **projectId**, **bookingId**: Required, valid CUID format
+
+#### POST /api/reviews  
+- **rating**: Required, integer between 1-5
+- **comment**: Optional, max 1000 characters
+- **userId**, **projectId**: Required, valid CUID format
+
+#### POST /api/refund
+- **reason**: Required, 10-500 characters
+- **paymentId**, **userId**: Required, valid CUID format
+
+### Schema Reuse & Type Safety
+
+Zod schemas provide **TypeScript type inference** for both server and client code:
+
+```typescript
+// Inferred TypeScript types
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+
+// Usage in API routes
+const validatedData: CreateUserInput = createUserSchema.parse(body);
+
+// Usage in client code (future implementation)
+const userData: CreateUserInput = {
+  email: "user@example.com",
+  name: "John Doe", 
+  password: "secure123"
+};
+```
+
+### Example Validation Scenarios
+
+**Valid Request:**
+```bash
+curl -X POST http://localhost:3000/api/users \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "user@example.com",
+    "name": "John Doe",
+    "password": "password123"
+  }'
+```
+
+**Invalid Request (multiple errors):**
+```bash
+curl -X POST http://localhost:3000/api/users \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "invalid-email",
+    "name": "J", 
+    "password": "123"
+  }'
+```
+
+**Validation Error Response:**
+```json
+{
+  "success": false,
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "email",
+      "message": "Please provide a valid email address"
+    },
+    {
+      "field": "name",
+      "message": "Name must be at least 2 characters long" 
+    },
+    {
+      "field": "password",
+      "message": "Password must be at least 6 characters long"
+    }
+  ]
+}
+```
+
+### Testing Validation
+
+For comprehensive validation testing examples, see [ZOD_VALIDATION_EXAMPLES.md](ZOD_VALIDATION_EXAMPLES.md).
+
+### Benefits of This Implementation
+
+1. **Prevents Invalid Data**: No corrupt data reaches the database
+2. **Consistent Error Format**: All endpoints return errors in the same structure
+3. **Type Safety**: Full TypeScript integration with inferred types
+4. **Reusable Schemas**: Same validation logic can be used across server and client
+5. **Clear Error Messages**: Users get specific, actionable feedback
+6. **Schema Evolution**: Easy to update validation rules as requirements change
+7. **Team Collaboration**: Schemas serve as API contracts between frontend/backend teams
+
 ## Database Setup & Migrations
 
 TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.

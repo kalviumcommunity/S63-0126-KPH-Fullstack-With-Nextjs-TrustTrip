@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createRefundSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/refunds - List all refunds with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -73,24 +80,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/refunds - Create a new refund request
+// POST /api/refund - Create a new refund request with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { reason, paymentId, userId } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!reason) errors.push("reason is required");
-    if (!paymentId) errors.push("paymentId is required");
-    if (!userId) errors.push("userId is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
-      );
-    }
+    
+    // Validate request body using Zod schema
+    const validatedData = createRefundSchema.parse(body);
+    const { reason, paymentId, userId } = validatedData;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -98,10 +95,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("User not found", 404);
     }
 
     // Check if payment exists
@@ -113,26 +107,17 @@ export async function POST(request: NextRequest) {
     });
 
     if (!payment) {
-      return NextResponse.json(
-        { success: false, error: "Payment not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("Payment not found", 404);
     }
 
     // Check if payment already has a refund
     if (payment.refund) {
-      return NextResponse.json(
-        { success: false, error: "This payment already has a refund request" },
-        { status: 409 }
-      );
+      return createErrorResponse("This payment already has a refund request", 409);
     }
 
     // Check if payment is completed
     if (payment.status !== "COMPLETED") {
-      return NextResponse.json(
-        { success: false, error: "Only completed payments can be refunded" },
-        { status: 400 }
-      );
+      return createErrorResponse("Only completed payments can be refunded", 400);
     }
 
     // Create the refund request
@@ -159,20 +144,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: refund,
-        message: "Refund request created successfully",
-      },
-      { status: 201 }
-    );
+    return createSuccessResponse(refund, "Refund request created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating refund:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create refund request" },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create refund request");
   }
 }
 

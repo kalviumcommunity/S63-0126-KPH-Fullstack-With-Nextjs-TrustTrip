@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { createPaymentSchema } from "@/lib/schemas/api-schemas";
+import {
+  createValidationErrorResponse,
+  createSuccessResponse,
+  createErrorResponse,
+} from "@/lib/utils/api-response";
+import { ZodError } from "zod";
 
 // GET /api/payments - List all payments with pagination and filtering
 export async function GET(request: NextRequest) {
@@ -76,10 +83,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/payments - Create a new payment
+// POST /api/payments - Create a new payment with Zod validation
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    
+    // Validate request body using Zod schema
+    const validatedData = createPaymentSchema.parse(body);
     const {
       amount,
       currency,
@@ -88,23 +98,7 @@ export async function POST(request: NextRequest) {
       userId,
       projectId,
       bookingId,
-    } = body;
-
-    // Validate required fields
-    const errors: string[] = [];
-    if (!amount) errors.push("amount is required");
-    if (!paymentMethod) errors.push("paymentMethod is required");
-    if (!transactionId) errors.push("transactionId is required");
-    if (!userId) errors.push("userId is required");
-    if (!projectId) errors.push("projectId is required");
-    if (!bookingId) errors.push("bookingId is required");
-
-    if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
-      );
-    }
+    } = validatedData;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -112,10 +106,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("User not found", 404);
     }
 
     // Check if booking exists
@@ -124,10 +115,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!booking) {
-      return NextResponse.json(
-        { success: false, error: "Booking not found" },
-        { status: 404 }
-      );
+      return createErrorResponse("Booking not found", 404);
     }
 
     // Check if transactionId is unique
@@ -136,17 +124,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingPayment) {
-      return NextResponse.json(
-        { success: false, error: "Transaction ID already exists" },
-        { status: 409 }
-      );
+      return createErrorResponse("Transaction ID already exists", 409);
     }
 
     // Create the payment
     const payment = await prisma.payment.create({
       data: {
-        amount: parseFloat(amount),
-        currency: currency || "USD",
+        amount,
+        currency,
         paymentMethod,
         transactionId,
         userId,
@@ -174,20 +159,15 @@ export async function POST(request: NextRequest) {
       data: { status: "CONFIRMED" },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: payment,
-        message: "Payment created successfully",
-      },
-      { status: 201 }
-    );
+    return createSuccessResponse(payment, "Payment created successfully", 201);
   } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof ZodError) {
+      return createValidationErrorResponse(error);
+    }
+    
     console.error("Error creating payment:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create payment" },
-      { status: 500 }
-    );
+    return createErrorResponse("Failed to create payment");
   }
 }
 
