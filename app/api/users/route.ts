@@ -45,6 +45,13 @@ export async function GET(request: NextRequest) {
       skip,
       take: limit,
       orderBy: { [sortBy]: sortOrder },
+import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
+
+// GET - Fetch all users
+export async function GET() {
+  try {
+    const users = await prisma.user.findMany({
       select: {
         id: true,
         email: true,
@@ -58,6 +65,7 @@ export async function GET(request: NextRequest) {
         _count: {
           select: { projects: true, reviews: true, bookings: true },
         },
+        createdAt: true,
       },
     });
 
@@ -77,6 +85,12 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch users" },
+      count: users.length,
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch users' },
       { status: 500 }
     );
   }
@@ -97,6 +111,15 @@ export async function POST(request: NextRequest) {
     if (errors.length > 0) {
       return NextResponse.json(
         { success: false, error: "Validation failed", details: errors },
+// POST - Create a new user
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { email, name, password } = body;
+
+    if (!email || !name || !password) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
@@ -114,6 +137,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the user (Note: In production, always hash passwords!)
+    // In production, hash the password!
     const user = await prisma.user.create({
       data: {
         email,
@@ -136,6 +160,8 @@ export async function POST(request: NextRequest) {
           createdAt: user.createdAt,
         },
         message: "User created successfully",
+        data: user,
+        message: 'User created successfully',
       },
       { status: 201 }
     );
@@ -143,6 +169,9 @@ export async function POST(request: NextRequest) {
     console.error("Error creating user:", error);
     return NextResponse.json(
       { success: false, error: "Failed to create user" },
+    console.error('Error creating user:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create user' },
       { status: 500 }
     );
   }

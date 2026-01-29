@@ -138,6 +138,7 @@ curl -X POST "http://localhost:3000/api/users" \
 ```bash
 curl -X GET "http://localhost:3000/api/test"
 ```
+## Database Setup & Migrations
 
 TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
 
