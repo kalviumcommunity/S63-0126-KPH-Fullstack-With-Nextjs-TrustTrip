@@ -1,12 +1,13 @@
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 
 // JWT secret key - in production, use a strong secret from environment variables
 // Generate a secure secret: openssl rand -base64 32
-const JWT_SECRET = process.env.JWT_SECRET || 'trusttrip-super-secret-key-change-in-production';
+const JWT_SECRET: string =
+  process.env.JWT_SECRET || "trusttrip-super-secret-key-change-in-production";
 
 // Token expiry time
-export const JWT_EXPIRY = '1h';
-export const REFRESH_TOKEN_EXPIRY = '7d';
+export const JWT_EXPIRY = "1h";
+export const REFRESH_TOKEN_EXPIRY = "7d";
 
 /**
  * Generate a JWT token for a user
@@ -14,8 +15,12 @@ export const REFRESH_TOKEN_EXPIRY = '7d';
  * @param expiresIn - Token expiry time (default: '1h')
  * @returns JWT token string
  */
-export function generateToken(payload: Record<string, unknown>, expiresIn: string = JWT_EXPIRY): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+export function generateToken(
+  payload: Record<string, unknown>,
+  expiresIn: string = JWT_EXPIRY
+): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return jwt.sign(payload, JWT_SECRET, { expiresIn } as any);
 }
 
 /**
@@ -25,10 +30,12 @@ export function generateToken(payload: Record<string, unknown>, expiresIn: strin
  */
 export function verifyToken(token: string): Record<string, unknown> | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    return decoded as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const decoded = jwt.verify(token, JWT_SECRET, {} as any);
+    return decoded as unknown as Record<string, unknown>;
   } catch (error) {
-    console.error('JWT verification failed:', error);
+    // eslint-disable-next-line no-console
+    console.error("JWT verification failed:", error);
     return null;
   }
 }
@@ -38,8 +45,10 @@ export function verifyToken(token: string): Record<string, unknown> | null {
  * @param authHeader - Authorization header value (e.g., "Bearer <token>")
  * @returns Token string or null if not found
  */
-export function extractTokenFromHeader(authHeader: string | null): string | null {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+export function extractTokenFromHeader(
+  authHeader: string | null
+): string | null {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
   }
   return authHeader.substring(7);
@@ -58,4 +67,3 @@ export function decodeToken(token: string): Record<string, unknown> | null {
     return null;
   }
 }
-

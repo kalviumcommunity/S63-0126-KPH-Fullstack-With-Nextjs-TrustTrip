@@ -411,6 +411,351 @@ New team members can understand the API response format immediately without read
 
 ---
 
+## Role-Based Access Control (RBAC) & Authorization Middleware
+
+### Overview
+
+TrustTrip implements a **Role-Based Access Control (RBAC)** system with an **Authorization Middleware** to protect routes based on user roles and valid JWT sessions. This ensures that:
+
+- **Authentication** confirms *who* the user is (verified by JWT)
+- **Authorization** determines *what* that user can do (verified by role)
+
+Together, they enforce the principle of least privilege: users only have access to resources they need.
+
+### Architecture & Request Flow
+
+The authorization system works through the following flow:
+
+```
+Incoming Request
+    ↓
+Middleware (app/middleware.ts)
+    ├─→ Is route public? → Allow (no auth needed)
+    ├─→ Is auth required? → Extract JWT from header
+    │       ├─→ Token missing? → Return 401 Unauthorized
+    │       ├─→ Token invalid/expired? → Return 403 Forbidden
+    │       └─→ Token valid? → Extract user info
+    │
+    └─→ Check Role-Based Access
+            ├─→ Does user have required role? → Attach user headers → Allow
+            └─→ Insufficient role? → Return 403 Forbidden
+
+Route Handler
+    ↓
+Use x-user-id, x-user-email, x-user-role from headers
+    ↓
+Return Response
+```
+
+### User Roles
+
+The system supports the following roles (extensible):
+
+| Role | Permissions | Access |
+|------|-------------|--------|
+| `user` | Standard user operations | `/api/users`, `/api/projects`, `/api/bookings`, `/api/reviews` |
+| `admin` | Full platform access, user management | `/api/admin`, `/api/admin/users`, `/api/admin/analytics` |
+| `moderator` | Content moderation | Extensible for future use |
+| `guest` | No authenticated access | Public routes only |
+
+### Implementation Files
+
+#### 1. **[middleware.config.ts](middleware.config.ts)**
+Centralized configuration for route protection. Define which routes need authentication and which require specific roles.
+
+```typescript
+// Example: Define protected routes
+export const authRequiredRoutes: ProtectedRoute[] = [
+  { path: "/api/users", requiredRoles: [] },      // All authenticated users
+  { path: "/api/projects", requiredRoles: [] },   // All authenticated users
+];
+
+export const roleBasedRoutes: ProtectedRoute[] = [
+  { path: "/api/admin", requiredRoles: ["admin"] }, // Admin only
+];
+
+export const publicRoutes: string[] = [
+  "/api/test",
+  "/api/auth/login",
+];
+```
+
+#### 2. **[app/middleware.ts](app/middleware.ts)**
+The core middleware that:
+- Validates JWT tokens from the `Authorization: Bearer <token>` header
+- Verifies JWT signature and expiration
+- Enforces role-based access control
+- Attaches user information to request headers for downstream handlers
+
+```typescript
+// Middleware validates JWT and checks roles
+// If valid: Adds custom headers (x-user-id, x-user-email, x-user-role)
+// If invalid: Returns 401 or 403 response
+```
+
+#### 3. **[prisma/schema.prisma](prisma/schema.prisma)**
+User model includes a `role` field:
+
+```prisma
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  role          String    @default("user")  // Determines access level
+  // ... other fields
+}
+```
+
+#### 4. **[app/api/admin/route.ts](app/api/admin/route.ts)**
+Admin-only protected route example:
+
+```typescript
+// GET /api/admin
+// Only accessible to users with role="admin"
+// Returns dashboard statistics and admin controls
+
+export async function GET(request: NextRequest) {
+  const userEmail = request.headers.get("x-user-email");
+  const userRole = request.headers.get("x-user-role");
+  // Role is already verified by middleware
+  // Process admin request...
+}
+```
+
+### Testing Authorization
+
+#### Test Case 1: Access Admin Route as Admin User
+
+```bash
+# Create a valid JWT for admin user
+JWT_TOKEN="your-admin-jwt-token-here"
+
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer $JWT_TOKEN"
+```
+
+**Expected Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Admin dashboard data retrieved successfully",
+  "data": {
+    "message": "Welcome to the Admin Dashboard",
+    "user": {
+      "email": "admin@example.com",
+      "role": "admin"
+    },
+    "statistics": {
+      "totalUsers": 245,
+      "activeProjects": 32,
+      "pendingBookings": 18,
+      "totalRevenue": 45320.5
+    }
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Test Case 2: Access Admin Route as Regular User
+
+```bash
+# Use JWT token for regular user
+USER_TOKEN="your-user-jwt-token-here"
+
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+**Expected Response (Forbidden):**
+```json
+{
+  "success": false,
+  "message": "Your role (user) does not have access to this resource. Required roles: admin",
+  "error": {
+    "code": "FORBIDDEN",
+    "details": "Insufficient permissions to access this resource"
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Test Case 3: Access Protected Route Without Token
+
+```bash
+curl -X GET http://localhost:3000/api/admin
+```
+
+**Expected Response (Unauthorized):**
+```json
+{
+  "success": false,
+  "message": "Authorization header missing. Use: Authorization: Bearer <token>",
+  "error": {
+    "code": "UNAUTHORIZED",
+    "details": "Please provide a valid authentication token"
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Test Case 4: Access Protected Route With Invalid Token
+
+```bash
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer invalid.token.here"
+```
+
+**Expected Response (Forbidden):**
+```json
+{
+  "success": false,
+  "message": "Invalid authentication token. Please provide a valid token.",
+  "error": {
+    "code": "FORBIDDEN",
+    "details": "Insufficient permissions to access this resource"
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Test Case 5: Access General User Route With Valid Token
+
+```bash
+USER_TOKEN="your-user-jwt-token-here"
+
+curl -X GET http://localhost:3000/api/users \
+  -H "Authorization: Bearer $USER_TOKEN"
+```
+
+**Expected Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Users fetched successfully",
+  "data": [...],
+  "pagination": {...},
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+### JWT Structure
+
+The JWT token should contain the following claims:
+
+```json
+{
+  "id": "user-123",
+  "email": "user@example.com",
+  "role": "user",  // or "admin"
+  "iat": 1698667200,
+  "exp": 1698753600
+}
+```
+
+Example of creating a JWT (for testing):
+
+```bash
+# Using node-jwt library or online tool
+# Header: { "alg": "HS256", "typ": "JWT" }
+# Payload: { "id": "user-123", "email": "user@example.com", "role": "user" }
+# Secret: your-jwt-secret-key
+```
+
+### Accessing User Information in Route Handlers
+
+Once middleware authorizes a request, user information is available via request headers:
+
+```typescript
+export async function GET(request: NextRequest) {
+  // Middleware attaches these headers after authorization
+  const userId = request.headers.get("x-user-id");
+  const userEmail = request.headers.get("x-user-email");
+  const userRole = request.headers.get("x-user-role");
+
+  // Use these to filter data, log actions, etc.
+  console.log(`${userEmail} (${userRole}) accessed this route`);
+}
+```
+
+### Extending RBAC
+
+To add a new role (e.g., "moderator"):
+
+1. **Update middleware.config.ts:**
+   ```typescript
+   export const roleBasedRoutes: ProtectedRoute[] = [
+     { path: "/api/moderation", requiredRoles: ["moderator"] },
+   ];
+   ```
+
+2. **Update Prisma User model** (if not already flexible):
+   - Role is already a string field, so no schema change needed
+
+3. **Create new protected route:**
+   ```typescript
+   // app/api/moderation/route.ts
+   export async function POST(request: NextRequest) {
+     const userRole = request.headers.get("x-user-role");
+     // Process moderation request...
+   }
+   ```
+
+4. **Assign role to users** when creating or updating:
+   ```typescript
+   const user = await prisma.user.create({
+     data: {
+       email: "moderator@example.com",
+       role: "moderator",
+     },
+   });
+   ```
+
+### Security Considerations
+
+#### 1. **JWT Secret Management**
+- Store `JWT_SECRET` in environment variables (`.env.local`)
+- Use a strong, randomly generated secret (minimum 32 characters)
+- Rotate secrets periodically in production
+
+```env
+JWT_SECRET=your-very-long-random-secret-key-minimum-32-characters
+```
+
+#### 2. **Token Expiration**
+- Set reasonable token expiration times (e.g., 1 hour for access tokens)
+- Implement refresh tokens for long-lived sessions
+- Logout by invalidating tokens server-side if needed
+
+#### 3. **HTTPS in Production**
+- Always use HTTPS to prevent token interception
+- Configure secure cookie flags if using cookie-based tokens
+
+#### 4. **Principle of Least Privilege**
+- Assign users the minimum role needed for their function
+- Regularly audit role assignments
+- Create granular roles rather than broad "super-admin" roles
+
+#### 5. **Audit Logging**
+The middleware logs all authorization attempts:
+
+```
+✓ User admin@example.com (admin) authorized to access /api/admin
+⚠ Access denied for user user@example.com (user) to /api/admin
+```
+
+Monitor these logs for unauthorized access attempts.
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Token missing" | No Authorization header | Include `Authorization: Bearer <token>` in request |
+| "Invalid token" | Token tampered or expired | Generate new JWT token |
+| "Access denied" | User role insufficient | Assign higher role or use different route |
+| Middleware not running | Route not in config | Add route to `authRequiredRoutes` or `roleBasedRoutes` |
+
+---
+
 ## Database Setup & Migrations
 
 TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
