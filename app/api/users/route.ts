@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { extractTokenFromHeader, verifyToken } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+
+// GET /api/users - List all users with pagination and filtering (Protected Route)
 import { NextRequest } from "next/server";
 import {
   sendSuccess,
@@ -21,6 +25,28 @@ import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
  */
 export async function GET(request: NextRequest) {
   try {
+    // Extract and verify JWT token from Authorization header
+    const authHeader = request.headers.get("authorization");
+    const token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: "Authorization token is required" },
+        { status: 401 }
+      );
+    }
+
+    // Verify the token
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return NextResponse.json(
+        { success: false, error: "Invalid or expired token" },
+        { status: 401 }
+      );
+    }
+
+    // Token is valid, proceed with fetching users
     const { searchParams } = new URL(request.url);
 
     // Pagination parameters
@@ -56,7 +82,7 @@ export async function GET(request: NextRequest) {
     // Get total count for pagination
     const total = await prisma.user.count({ where });
 
-    // Fetch users
+    // Fetch users (exclude passwords from response)
     const users = await prisma.user.findMany({
       where,
       skip,
@@ -64,8 +90,8 @@ export async function GET(request: NextRequest) {
       orderBy: { [sortBy]: sortOrder },
       select: {
         id: true,
-        email: true,
         name: true,
+        email: true,
         profileImage: true,
         bio: true,
         phone: true,
@@ -78,6 +104,14 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    return NextResponse.json({
+      success: true,
+      data: users,
+      authenticatedUser: {
+        userId: decoded.userId,
+        email: decoded.email,
+      },
+      pagination: {
     return sendPaginatedSuccess(
       users,
       {
@@ -93,6 +127,14 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Error fetching users:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch users" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/users - Create a new user (Public - for signup via /api/auth/signup)
     return sendError(
       "Failed to fetch users",
       ERROR_CODES.USER_FETCH_ERROR,
@@ -128,6 +170,9 @@ export async function POST(request: NextRequest) {
     if (!password) errors.push("password is required");
 
     if (errors.length > 0) {
+      return NextResponse.json(
+        { success: false, error: "Validation failed", details: errors },
+        { status: 400 }
       return sendError(
         "Validation failed: " + errors.join(", "),
         ERROR_CODES.VALIDATION_ERROR,
@@ -149,12 +194,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Note: Password hashing is handled in /api/auth/signup
+    // This endpoint is for direct user creation if needed
     // Create the user
     // Note: In production, always hash passwords with bcrypt or similar!
     const user = await prisma.user.create({
       data: {
         email,
         name,
+        password, // Should be hashed before passing here
         password, // ⚠️ WARNING: This is a demo - always hash passwords in production!
         bio,
         phone,
@@ -164,6 +212,15 @@ export async function POST(request: NextRequest) {
 
     return sendSuccess(
       {
+        success: true,
+        data: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          verified: user.verified,
+          createdAt: user.createdAt,
+        },
+        message: "User created successfully",
         id: user.id,
         email: user.email,
         name: user.name,
@@ -176,6 +233,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Error creating user:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to create user" },
+      { status: 500 }
 
     // Check for specific Prisma errors
     if (error instanceof Error && error.message.includes("Unique constraint")) {
