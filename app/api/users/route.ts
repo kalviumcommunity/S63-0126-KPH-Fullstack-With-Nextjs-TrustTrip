@@ -1,9 +1,32 @@
 import { prisma } from "@/lib/prisma";
+import { extractTokenFromHeader, verifyToken } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/users - List all users with pagination and filtering
+// GET /api/users - List all users with pagination and filtering (Protected Route)
 export async function GET(request: NextRequest) {
   try {
+    // Extract and verify JWT token from Authorization header
+    const authHeader = request.headers.get("authorization");
+    const token = extractTokenFromHeader(authHeader);
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: "Authorization token is required" },
+        { status: 401 }
+      );
+    }
+
+    // Verify the token
+    const decoded = verifyToken(token);
+
+    if (!decoded) {
+      return NextResponse.json(
+        { success: false, error: "Invalid or expired token" },
+        { status: 401 }
+      );
+    }
+
+    // Token is valid, proceed with fetching users
     const { searchParams } = new URL(request.url);
 
     // Pagination parameters
@@ -39,23 +62,16 @@ export async function GET(request: NextRequest) {
     // Get total count for pagination
     const total = await prisma.user.count({ where });
 
-    // Fetch users
+    // Fetch users (exclude passwords from response)
     const users = await prisma.user.findMany({
       where,
       skip,
       take: limit,
       orderBy: { [sortBy]: sortOrder },
-import { prisma } from '@/lib/prisma';
-import { NextRequest, NextResponse } from 'next/server';
-
-// GET - Fetch all users
-export async function GET() {
-  try {
-    const users = await prisma.user.findMany({
       select: {
         id: true,
-        email: true,
         name: true,
+        email: true,
         profileImage: true,
         bio: true,
         phone: true,
@@ -65,13 +81,16 @@ export async function GET() {
         _count: {
           select: { projects: true, reviews: true, bookings: true },
         },
-        createdAt: true,
       },
     });
 
     return NextResponse.json({
       success: true,
       data: users,
+      authenticatedUser: {
+        userId: decoded.userId,
+        email: decoded.email,
+      },
       pagination: {
         page,
         limit,
@@ -85,18 +104,12 @@ export async function GET() {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch users" },
-      count: users.length,
-    });
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch users' },
       { status: 500 }
     );
   }
 }
 
-// POST /api/users - Create a new user
+// POST /api/users - Create a new user (Public - for signup via /api/auth/signup)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -111,15 +124,6 @@ export async function POST(request: NextRequest) {
     if (errors.length > 0) {
       return NextResponse.json(
         { success: false, error: "Validation failed", details: errors },
-// POST - Create a new user
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { email, name, password } = body;
-
-    if (!email || !name || !password) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
@@ -136,13 +140,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the user (Note: In production, always hash passwords!)
-    // In production, hash the password!
+    // Note: Password hashing is handled in /api/auth/signup
+    // This endpoint is for direct user creation if needed
     const user = await prisma.user.create({
       data: {
         email,
         name,
-        password, // Note: This is a demo - always hash passwords in production!
+        password, // Should be hashed before passing here
         bio,
         phone,
         profileImage,
@@ -160,8 +164,6 @@ export async function POST(request: NextRequest) {
           createdAt: user.createdAt,
         },
         message: "User created successfully",
-        data: user,
-        message: 'User created successfully',
       },
       { status: 201 }
     );
@@ -169,9 +171,6 @@ export async function POST(request: NextRequest) {
     console.error("Error creating user:", error);
     return NextResponse.json(
       { success: false, error: "Failed to create user" },
-    console.error('Error creating user:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to create user' },
       { status: 500 }
     );
   }
