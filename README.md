@@ -138,6 +138,279 @@ curl -X POST "http://localhost:3000/api/users" \
 ```bash
 curl -X GET "http://localhost:3000/api/test"
 ```
+
+---
+
+## Global API Response Handler
+
+### Overview
+
+TrustTrip implements a **Global API Response Handler** to ensure every API endpoint returns responses in a consistent, structured, and predictable format. This unified response envelope improves developer experience (DX), simplifies error debugging, and strengthens observability in production environments.
+
+### Unified Response Envelope Structure
+
+Every API response follows this standardized structure:
+
+#### Success Response
+
+```json
+{
+  "success": true,
+  "message": "Users fetched successfully",
+  "data": [
+    {
+      "id": "user-123",
+      "email": "john@example.com",
+      "name": "John Doe",
+      "verified": true,
+      "createdAt": "2025-10-30T10:00:00Z"
+    }
+  ],
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Paginated Success Response
+
+```json
+{
+  "success": true,
+  "message": "Projects fetched successfully",
+  "data": [
+    {
+      "id": "project-456",
+      "title": "European Tour 2026",
+      "destination": "Paris, France",
+      "startDate": "2026-06-01T00:00:00Z",
+      "endDate": "2026-06-15T00:00:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 42,
+    "totalPages": 5,
+    "hasNext": true,
+    "hasPrev": false
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+#### Error Response
+
+```json
+{
+  "success": false,
+  "message": "Validation failed: email is required, name is required",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": ["email is required", "name is required"]
+  },
+  "timestamp": "2025-10-30T10:00:00.123Z"
+}
+```
+
+### Response Envelope Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Indicates if the request was successful (`true`) or failed (`false`) |
+| `message` | string | Human-readable message describing the operation or error |
+| `data` | any | The actual response data (omitted on errors) |
+| `pagination` | object | Pagination metadata (only present on paginated list endpoints) |
+| `error` | object | Error details including code and optional details (only on errors) |
+| `timestamp` | string | ISO 8601 timestamp when the response was generated |
+
+### Error Codes Reference
+
+The following error codes are used consistently across all endpoints:
+
+**Validation & Client Errors:**
+- `VALIDATION_ERROR` - Request validation failed
+- `MISSING_REQUIRED_FIELD` - A required field is missing
+- `INVALID_FORMAT` - Data format is invalid
+- `EMAIL_ALREADY_IN_USE` - Email address already exists
+
+**Authentication & Authorization:**
+- `UNAUTHORIZED` - Authentication required
+- `FORBIDDEN` - Insufficient permissions
+- `INVALID_CREDENTIALS` - Invalid login credentials
+
+**Resource Errors:**
+- `USER_NOT_FOUND` - User resource not found
+- `PROJECT_NOT_FOUND` - Project resource not found
+- `BOOKING_NOT_FOUND` - Booking not found
+- `BOOKING_CONFLICT` - Booking dates conflict
+
+**Database Errors:**
+- `DATABASE_ERROR` - Database operation failed
+- `UNIQUE_CONSTRAINT_VIOLATION` - Duplicate unique field value
+- `QUERY_EXECUTION_FAILED` - Query execution error
+
+**Operation-Specific Errors:**
+- `USER_CREATION_FAILED` - User creation failed
+- `PROJECT_CREATION_FAILED` - Project creation failed
+- `BOOKING_CREATION_FAILED` - Booking creation failed
+- `PAYMENT_FAILED` - Payment processing failed
+- `REFUND_FAILED` - Refund processing failed
+
+**Server Errors:**
+- `INTERNAL_ERROR` - Generic server error
+- `SERVICE_UNAVAILABLE` - Service temporarily unavailable
+- `REQUEST_TIMEOUT` - Request timeout
+
+### Using the Response Handler in Routes
+
+The response handler is implemented in [lib/responseHandler.ts](lib/responseHandler.ts) and provides three main functions:
+
+#### 1. `sendSuccess()` - For successful responses
+
+```typescript
+import { sendSuccess } from "@/lib/responseHandler";
+import { HTTP_STATUS_CODES } from "@/lib/errorCodes";
+
+export async function GET() {
+  const data = await fetchData();
+  return sendSuccess(data, "Data fetched successfully", HTTP_STATUS_CODES.OK);
+}
+```
+
+#### 2. `sendPaginatedSuccess()` - For paginated list responses
+
+```typescript
+import { sendPaginatedSuccess } from "@/lib/responseHandler";
+
+export async function GET(request: NextRequest) {
+  const page = 1, limit = 10;
+  const total = 42;
+  const items = await fetchItems();
+
+  return sendPaginatedSuccess(
+    items,
+    {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1,
+    },
+    "Items fetched successfully"
+  );
+}
+```
+
+#### 3. `sendError()` - For error responses
+
+```typescript
+import { sendError } from "@/lib/responseHandler";
+import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    
+    if (!body.email) {
+      return sendError(
+        "Email is required",
+        ERROR_CODES.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS_CODES.BAD_REQUEST
+      );
+    }
+
+    // Process request...
+  } catch (error) {
+    return sendError(
+      "Failed to process request",
+      ERROR_CODES.INTERNAL_ERROR,
+      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
+      error
+    );
+  }
+}
+```
+
+### Implemented Routes
+
+The following API routes currently use the Global Response Handler:
+
+#### Users API - `/api/users`
+- **GET**: List users with pagination and filtering
+- **POST**: Create a new user
+
+Example Request:
+```bash
+GET http://localhost:3000/api/users?page=1&limit=10&search=john
+POST http://localhost:3000/api/users
+{
+  "email": "jane@example.com",
+  "name": "Jane Doe",
+  "password": "secure123"
+}
+```
+
+#### Projects API - `/api/projects`
+- **GET**: List projects with pagination and filtering
+- **POST**: Create a new project
+
+Example Request:
+```bash
+GET http://localhost:3000/api/projects?page=1&destination=Paris
+POST http://localhost:3000/api/projects
+{
+  "title": "Paris Trip",
+  "destination": "Paris, France",
+  "startDate": "2026-06-01",
+  "endDate": "2026-06-15",
+  "userId": "user-123"
+}
+```
+
+### Developer Experience & Observability Benefits
+
+#### 1. **Consistent Structure**
+Every endpoint returns the same envelope structure, allowing frontend developers to write generic response handling code without needing route-specific logic.
+
+#### 2. **Predictable Error Handling**
+All error responses include:
+- A `code` field for programmatic error tracking
+- A `message` field for user-friendly explanations
+- Optional `details` for additional context
+- Timestamps for debugging
+
+This makes it easy to integrate with monitoring tools like Sentry, Datadog, or LogRocket.
+
+#### 3. **Standardized HTTP Status Codes**
+Each error includes appropriate HTTP status codes:
+- `400` for validation errors
+- `401` for authentication failures
+- `403` for authorization failures
+- `404` for not found
+- `409` for conflicts
+- `500` for server errors
+
+#### 4. **Built-in Pagination Metadata**
+Paginated responses include navigation hints (`hasNext`, `hasPrev`, `totalPages`) allowing frontend apps to implement smart pagination UI without calculating page counts.
+
+#### 5. **Timestamped Responses**
+Every response includes an ISO 8601 timestamp, enabling:
+- Client-server clock skew detection
+- Request-response correlation in distributed systems
+- Audit trail generation
+
+#### 6. **Better Logging & Monitoring**
+With standardized error codes and timestamps, you can easily:
+- Create dashboards tracking error frequencies
+- Set up alerts for specific error codes
+- Correlate frontend and backend logs
+- Generate detailed audit trails
+
+#### 7. **Faster Onboarding**
+New team members can understand the API response format immediately without reading route-specific documentation.
+
+---
+
 ## Database Setup & Migrations
 
 TrustTrip uses **Prisma ORM** with **PostgreSQL** for database management, ensuring reproducible schema evolution and data consistency across development, staging, and production environments.
