@@ -1,7 +1,26 @@
 import { prisma } from "@/lib/prisma";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  sendSuccess,
+  sendError,
+  sendPaginatedSuccess,
+} from "@/lib/responseHandler";
+import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
 
-// GET /api/projects - List all projects with pagination and filtering
+/**
+ * GET /api/projects
+ * List all projects with pagination and filtering
+ *
+ * Query Parameters:
+ * - page: number (default: 1)
+ * - limit: number (default: 10, max: 100)
+ * - userId: string
+ * - status: string
+ * - destination: string
+ * - search: string (searches title, description, destination)
+ * - sortBy: string (default: createdAt)
+ * - sortOrder: "asc" | "desc" (default: desc)
+ */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -58,10 +77,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      data: projects,
-      pagination: {
+    return sendPaginatedSuccess(
+      projects,
+      {
         page,
         limit,
         total,
@@ -69,17 +87,37 @@ export async function GET(request: NextRequest) {
         hasNext: page * limit < total,
         hasPrev: page > 1,
       },
-    });
+      "Projects fetched successfully"
+    );
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error("Error fetching projects:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch projects" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch projects",
+      ERROR_CODES.PROJECT_NOT_FOUND,
+      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
+      error
     );
   }
 }
 
-// POST /api/projects - Create a new project
+/**
+ * POST /api/projects
+ * Create a new project
+ *
+ * Request Body:
+ * {
+ *   title: string (required),
+ *   description?: string,
+ *   destination: string (required),
+ *   startDate: string (ISO date, required),
+ *   endDate: string (ISO date, required),
+ *   budget?: number,
+ *   currency?: string,
+ *   userId: string (required),
+ *   imageUrl?: string
+ * }
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -104,9 +142,11 @@ export async function POST(request: NextRequest) {
     if (!userId) errors.push("userId is required");
 
     if (errors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: errors },
-        { status: 400 }
+      return sendError(
+        "Validation failed: " + errors.join(", "),
+        ERROR_CODES.VALIDATION_ERROR,
+        HTTP_STATUS_CODES.BAD_REQUEST,
+        errors
       );
     }
 
@@ -116,9 +156,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
+      return sendError(
+        "User not found",
+        ERROR_CODES.USER_NOT_FOUND,
+        HTTP_STATUS_CODES.NOT_FOUND
       );
     }
 
@@ -142,20 +183,30 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: project,
-        message: "Project created successfully",
-      },
-      { status: 201 }
+    return sendSuccess(
+      project,
+      "Project created successfully",
+      HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error("Error creating project:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create project" },
-      { status: 500 }
+
+    // Check for specific Prisma errors
+    if (error instanceof Error && error.message.includes("Unique constraint")) {
+      return sendError(
+        "A project with this configuration already exists",
+        ERROR_CODES.UNIQUE_CONSTRAINT_VIOLATION,
+        HTTP_STATUS_CODES.CONFLICT,
+        error.message
+      );
+    }
+
+    return sendError(
+      "Failed to create project",
+      ERROR_CODES.PROJECT_CREATION_FAILED,
+      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
+      error
     );
   }
 }
-
