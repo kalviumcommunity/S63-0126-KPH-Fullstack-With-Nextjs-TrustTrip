@@ -1,8 +1,40 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
+
+/**
+ * Generate a unique cache key based on query parameters
+ * @param params - Query parameters for the request
+ * @returns A unique cache key string
+ */
+function generateBookingsCacheKey(params: {
+  page: number;
+  limit: number;
+  userId?: string | null;
+  projectId?: string | null;
+  status?: string | null;
+  sortBy: string;
+  sortOrder: string;
+}): string {
+  const { page, limit, userId, projectId, status, sortBy, sortOrder } = params;
+  return `${CACHE_KEYS.BOOKINGS}:list:${page}:${limit}:${userId || "none"}:${projectId || "none"}:${status || "none"}:${sortBy}:${sortOrder}`;
+}
+
+/**
+ * Invalidate all bookings list cache entries
+ * Call this when bookings are created, updated, or deleted
+ */
+async function invalidateBookingsCache(): Promise<void> {
+  // Delete all keys matching the bookings list pattern
+  const keys = await redis.keys(`${CACHE_KEYS.BOOKINGS}:list:*`);
+  if (keys.length > 0) {
+    await redis.del(...keys);
+  }
+}
 
 // GET /api/bookings - List all bookings with pagination and filtering
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
   try {
     const { searchParams } = new URL(request.url);
 
@@ -22,6 +54,37 @@ export async function GET(request: NextRequest) {
     // Sorting
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
+
+    // Build cache key
+    const cacheKey = generateBookingsCacheKey({
+      page,
+      limit,
+      userId,
+      projectId,
+      status,
+      sortBy,
+      sortOrder,
+    });
+
+    // Try to get from cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const cachedData = JSON.parse(cached);
+      const responseTime = Date.now() - startTime;
+      // eslint-disable-next-line no-console
+      console.log(`[CACHE HIT] Bookings list - Response time: ${responseTime}ms`);
+      return NextResponse.json({
+        success: true,
+        data: cachedData.bookings,
+        pagination: cachedData.pagination,
+        message: "Bookings fetched successfully (from cache)",
+        responseTime,
+      });
+    }
+
+    // Cache miss - fetch from database
+    // eslint-disable-next-line no-console
+    console.log(`[CACHE MISS] Bookings list - Fetching from database`);
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -52,17 +115,32 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    const paginationData = {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1,
+    };
+
+    // Cache the result with TTL
+    await redis.setex(
+      cacheKey,
+      CACHE_TTL.MEDIUM,
+      JSON.stringify({ bookings, pagination: paginationData })
+    );
+
+    const responseTime = Date.now() - startTime;
+    // eslint-disable-next-line no-console
+    console.log(`[CACHE MISS] Bookings list - Response time: ${responseTime}ms`);
+
     return NextResponse.json({
       success: true,
       data: bookings,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNext: page * limit < total,
-        hasPrev: page > 1,
-      },
+      pagination: paginationData,
+      message: "Bookings fetched successfully",
+      responseTime,
     });
   } catch (error) {
     console.error("Error fetching bookings:", error);
@@ -134,6 +212,11 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Invalidate cache after booking creation
+    await invalidateBookingsCache();
+    // eslint-disable-next-line no-console
+    console.log("[CACHE INVALIDATED] Bookings list cache cleared");
 
     return NextResponse.json(
       {
