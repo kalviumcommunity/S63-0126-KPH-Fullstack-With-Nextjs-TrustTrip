@@ -2172,3 +2172,392 @@ const result = await prisma.$queryRaw`
 
 ---
 ```
+
+## ��� Secure File Uploads with Pre-Signed URLs (AWS S3)
+
+### Overview
+
+This feature enables secure, scalable file uploads using AWS S3 pre-signed URLs. Instead of uploading files through your backend server (which consumes bandwidth and limits throughput), files are uploaded directly to S3 using temporary, cryptographically signed URLs. This approach provides:
+
+✅ **Security**: Files never pass through your backend; credentials are not exposed to clients  
+✅ **Scalability**: Direct S3 uploads bypass your server, reducing load  
+✅ **Cost Efficiency**: Reduced bandwidth consumption on your backend  
+✅ **Audit Trail**: File metadata stored in database for tracking and compliance  
+
+### Architecture Diagram
+
+```
+┌─────────────┐                    ┌──────────────┐
+│   Frontend  │                    │   Your API   │
+│  (Browser)  │                    │   Backend    │
+└──────┬──────┘                    └──────┬───────┘
+       │                                  │
+       │ (1) POST /api/upload             │
+       │ {filename, size, type}           │
+       ├─────────────────────────────────>│
+       │                                  │
+       │                    (2) Generate  │
+       │              Pre-signed URL      │
+       │              (AWS SDK)           │
+       │                                  │
+       │ (3) Return uploadURL             │
+       │<─────────────────────────────────┤
+       │                                  │
+       │  (4) PUT file directly to S3     │
+       │      using uploadURL             │
+       ├─────────────────────────────────────────┐
+       │                                         │
+       │                              ┌──────────▼────────┐
+       │                              │   AWS S3 Bucket   │
+       │                              │  (Public-Read)    │
+       │                              └───────────────────┘
+       │
+       │ (5) File uploaded successfully
+       │ POST /api/files
+       │ {fileName, fileURL, fileSize}
+       ├─────────────────────────────────────────>
+       │                                  │
+       │                    (6) Save to   │
+       │                    PostgreSQL    │
+       │                                  │
+       │ (7) Return file metadata        │
+       │<─────────────────────────────────┤
+       │
+```
+
+### Implementation Files
+
+The following files were created/modified for file upload functionality:
+
+- **[app/api/upload/route.ts](app/api/upload/route.ts)** - Generates pre-signed URLs for S3 uploads
+- **[app/api/files/route.ts](app/api/files/route.ts)** - Manages file metadata storage and retrieval
+- **[prisma/schema.prisma](prisma/schema.prisma)** - Added `File` model for database tracking
+- **[.env.example](.env.example)** - AWS configuration template
+
+### Setup Instructions
+
+#### 1. Install Dependencies
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+```
+
+#### 2. Configure AWS Credentials
+
+Create an `.env.local` file with your AWS S3 credentials:
+
+```bash
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
+AWS_REGION=ap-south-1
+AWS_BUCKET_NAME=your-bucket-name
+```
+
+> **How to get AWS credentials:**
+> 1. Go to [AWS IAM Console](https://console.aws.amazon.com/iam/)
+> 2. Create a new IAM user with `AmazonS3FullAccess` permissions
+> 3. Generate access keys (save them securely)
+> 4. Add them to your `.env.local`
+
+#### 3. Update Database
+
+The Prisma schema includes a new `File` model:
+
+```prisma
+model File {
+  id            String          @id @default(cuid())
+  name          String
+  url           String          @unique
+  size          Int             
+  fileType      String          
+  uploadedAt    DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  expiresAt     DateTime?       
+
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([uploadedAt])
+}
+```
+
+Run migration:
+
+```bash
+npx prisma migrate dev --name add_file_model
+```
+
+### API Endpoints Reference
+
+#### POST /api/upload - Generate Pre-Signed URL
+
+Generates a temporary upload URL for direct S3 upload with validation.
+
+**Request:**
+```json
+{
+  "filename": "profile.png",
+  "fileType": "image/png",
+  "fileSize": 2048,
+  "userId": "user_id_123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "uploadURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/uploads/user_id_123/1234567890-abc123.png?X-Amz-Signature=...",
+  "fileURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/uploads/user_id_123/1234567890-abc123.png",
+  "s3Key": "uploads/user_id_123/1234567890-abc123.png",
+  "expiresIn": 3600
+}
+```
+
+**Key Features:**
+- ✅ File type whitelist validation (JPEG, PNG, GIF, WebP, PDF, TXT, DOC, DOCX)
+- ✅ File size validation (1 byte to 10 MB)
+- ✅ Unique S3 key generation per user per upload
+- ✅ Pre-signed URL valid for 1 hour
+
+#### POST /api/files - Store File Metadata
+
+Saves file metadata to PostgreSQL after successful S3 upload.
+
+**Request:**
+```json
+{
+  "fileName": "profile.png",
+  "fileURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/...",
+  "fileSize": 2048,
+  "fileType": "image/png",
+  "userId": "user_id_123",
+  "expiresAt": "2026-03-04T10:00:00Z"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "file_123",
+    "name": "profile.png",
+    "url": "https://...",
+    "fileType": "image/png",
+    "size": 2048,
+    "userId": "user_id_123",
+    "uploadedAt": "2026-02-02T10:00:00Z"
+  }
+}
+```
+
+#### GET /api/files - List User's Files
+
+Retrieves files for a user with pagination and sorting.
+
+**Query Parameters:**
+```
+GET /api/files?userId=user_id_123&page=1&limit=10&sortBy=uploadedAt&sortOrder=desc
+```
+
+#### DELETE /api/files - Delete File
+
+Removes a file record from database.
+
+**Query Parameters:**
+```
+DELETE /api/files?fileId=file_id_123
+```
+
+### Complete Upload Flow Example
+
+**Frontend Implementation:**
+
+```typescript
+// Step 1: Request pre-signed URL
+const uploadResponse = await fetch('/api/upload', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    filename: 'profile.png',
+    fileType: 'image/png',
+    fileSize: file.size,
+    userId: 'user_id_123',
+  }),
+});
+
+const { uploadURL, fileURL } = await uploadResponse.json();
+
+// Step 2: Upload directly to S3
+const s3Response = await fetch(uploadURL, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'image/png' },
+  body: file,
+});
+
+// Step 3: Store metadata
+if (s3Response.ok) {
+  const dbResponse = await fetch('/api/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName: 'profile.png',
+      fileURL: fileURL,
+      fileSize: file.size,
+      fileType: 'image/png',
+      userId: 'user_id_123',
+    }),
+  });
+  
+  const fileData = await dbResponse.json();
+  console.log('Upload complete:', fileData);
+}
+```
+
+### File Type & Size Validation
+
+**Allowed Types:**
+- Images: JPEG, PNG, GIF, WebP
+- Documents: PDF, TXT, DOC, DOCX
+
+**Size Limits:**
+- Minimum: 1 byte
+- Maximum: 10 MB
+
+Edit limits in [app/api/upload/route.ts](app/api/upload/route.ts#L16-L35).
+
+### Pre-Signed URL Expiry & Security
+
+**URL Expiration:** 1 hour (3600 seconds)
+- Prevents unauthorized access if URL is leaked
+- Each request generates a new unique URL
+
+**Cryptographic Signing:**
+- URLs signed with AWS private key
+- Tampering invalidates signature
+- S3 rejects expired/invalid requests
+
+**Access Control:**
+- Current: `public-read` (anyone with URL can access)
+- Optional: Remove ACL for private files, use signed read URLs
+
+### Lifecycle Management & Cost Optimization
+
+**S3 Lifecycle Policy** automatically deletes old files:
+
+Configure in AWS S3 Console:
+1. Select bucket → Management → Lifecycle rules
+2. Create rule to expire objects after 30 days
+3. Apply to `uploads/` prefix
+
+**Benefits:**
+- ��� Reduces storage costs
+- ���️ Maintains data hygiene
+- ��� Auto-deletes sensitive files
+- ♻️ Minimizes S3 bill
+
+**Database Cleanup** (Optional):
+```typescript
+// Scheduled job to remove expired DB records
+const expired = await prisma.file.deleteMany({
+  where: { expiresAt: { lt: new Date() } },
+});
+```
+
+### Security Considerations
+
+#### Public vs. Private File Access
+
+| Aspect | Public | Private |
+|--------|--------|---------|
+| **Access** | Anyone with URL | Authenticated users only |
+| **Use Case** | Profiles, galleries | Invoices, contracts, docs |
+| **Setup** | `ACL: "public-read"` | Remove ACL, use read URLs |
+| **Cost** | Slightly higher | Lower (controlled) |
+
+#### Key Security Features
+
+- ✅ **SQL Injection Prevention**: Prisma parameterized queries
+- ✅ **File Validation**: Whitelist types, validate size server-side
+- ✅ **Unique Keys**: Sanitized filenames prevent collisions
+- ✅ **HTTPS**: All URLs use HTTPS by default
+- ✅ **Rate Limiting**: Add per-user upload limits in production
+- ✅ **Access Logs**: Enable S3 access logging for audit trails
+
+### Testing the Upload Feature
+
+**Using cURL:**
+
+```bash
+# Step 1: Get pre-signed URL
+UPLOAD_RESPONSE=$(curl -X POST http://localhost:3000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "test.png",
+    "fileType": "image/png",
+    "fileSize": 2048,
+    "userId": "test-user"
+  }')
+
+UPLOAD_URL=$(echo $UPLOAD_RESPONSE | jq -r '.uploadURL')
+FILE_URL=$(echo $UPLOAD_RESPONSE | jq -r '.fileURL')
+
+# Step 2: Upload to S3
+curl -X PUT "$UPLOAD_URL" \
+  -H "Content-Type: image/png" \
+  --data-binary @test.png
+
+# Step 3: Save metadata
+curl -X POST http://localhost:3000/api/files \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"fileName\": \"test.png\",
+    \"fileURL\": \"$FILE_URL\",
+    \"fileSize\": 2048,
+    \"fileType\": \"image/png\",
+    \"userId\": \"test-user\"
+  }"
+```
+
+**Verify Success:**
+- ✅ File accessible in browser (paste fileURL)
+- ✅ Visible in AWS S3 console
+- ✅ Record in PostgreSQL: `SELECT * FROM "File" WHERE name='test.png'`
+
+### Common Issues & Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `AccessDenied` | Invalid credentials | Check `.env.local`, regenerate IAM keys |
+| `NoSuchBucket` | Wrong bucket name | Verify `AWS_BUCKET_NAME` |
+| `SignatureDoesNotMatch` | Expired/tampered URL | URLs expire in 1h, regenerate |
+| `403 Forbidden` | File not public | Add `ACL: "public-read"` |
+| `Duplicate URL` | File already exists | Unique constraint prevents duplicates |
+
+### Best Practices
+
+1. ✅ Validate file type & size **server-side** (never trust client)
+2. ✅ Use unique file names: `uploads/{userId}/{timestamp}-{random}.ext`
+3. ✅ Set short expiry on pre-signed URLs (1 hour is good)
+4. ✅ Always store metadata in DB for audit trails
+5. ✅ Implement lifecycle policies for cleanup
+6. ✅ Monitor S3 costs via CloudWatch
+7. ✅ Use HTTPS everywhere (browser → API → S3)
+8. ✅ Enable S3 access logging for security audits
+
+### Summary Table
+
+| Feature | Benefit | Implementation |
+|---------|---------|-----------------|
+| **Pre-signed URLs** | Direct S3 uploads, no server bottleneck | AWS SDK `getSignedUrl()` |
+| **File Validation** | Prevents malicious uploads | Type whitelist, size check |
+| **DB Tracking** | Audit trail for compliance | Prisma `File` model |
+| **Lifecycle Policies** | Auto-delete old files, reduce costs | S3 lifecycle rules |
+| **Public Access** | Shareable URLs for collaboration | `ACL: "public-read"` |
+| **Signed URLs** | Cryptographic authenticity | AWS signature algorithm |
+
+---
