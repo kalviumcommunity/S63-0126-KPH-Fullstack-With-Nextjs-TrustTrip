@@ -7,6 +7,8 @@ import {
 } from "@/lib/responseHandler";
 import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
 import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
+import { handleAsyncError } from "@/lib/errorHandler";
+import { logger } from "@/lib/logger";
 
 /**
  * Generate a unique cache key based on query parameters
@@ -55,6 +57,8 @@ async function invalidateUsersCache(): Promise<void> {
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
+  const correlationId = logger.logApiRequest("GET", "/api/users");
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -89,8 +93,19 @@ export async function GET(request: NextRequest) {
     if (cached) {
       const cachedData = JSON.parse(cached);
       const responseTime = Date.now() - startTime;
-      // eslint-disable-next-line no-console
-      console.log(`[CACHE HIT] Users list - Response time: ${responseTime}ms`);
+
+      logger.logApiResponse(
+        "GET",
+        "/api/users",
+        200,
+        responseTime,
+        correlationId,
+        {
+          source: "cache",
+          totalUsers: cachedData.pagination.total,
+        }
+      );
+
       return sendPaginatedSuccess(
         cachedData.users,
         cachedData.pagination,
@@ -99,8 +114,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Cache miss - fetch from database
-    // eslint-disable-next-line no-console
-    console.log(`[CACHE MISS] Users list - Fetching from database`);
+    logger.debug("Cache miss - fetching users from database", {
+      correlationId,
+    });
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -159,8 +175,18 @@ export async function GET(request: NextRequest) {
     );
 
     const responseTime = Date.now() - startTime;
-    // eslint-disable-next-line no-console
-    console.log(`[CACHE MISS] Users list - Response time: ${responseTime}ms`);
+    logger.logApiResponse(
+      "GET",
+      "/api/users",
+      200,
+      responseTime,
+      correlationId,
+      {
+        source: "database",
+        totalUsers: total,
+        usersReturned: users.length,
+      }
+    );
 
     return sendPaginatedSuccess(
       users,
@@ -168,14 +194,7 @@ export async function GET(request: NextRequest) {
       "Users fetched successfully"
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error fetching users:", error);
-    return sendError(
-      "Failed to fetch users",
-      ERROR_CODES.USER_FETCH_ERROR,
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      error
-    );
+    return handleAsyncError(error, "GET", "/api/users", { correlationId });
   }
 }
 
@@ -198,6 +217,9 @@ export async function GET(request: NextRequest) {
  * Authorization: Bearer <JWT_TOKEN> (admin role recommended)
  */
 export async function POST(request: NextRequest) {
+  const correlationId = logger.logApiRequest("POST", "/api/users");
+  const startTime = Date.now();
+
   try {
     const body = await request.json();
     const { email, name, password, bio, phone, profileImage, role } = body;
@@ -209,6 +231,12 @@ export async function POST(request: NextRequest) {
     if (!password) errors.push("password is required");
 
     if (errors.length > 0) {
+      logger.warn("User creation validation failed", {
+        correlationId,
+        errors,
+        email: email ? "[REDACTED]" : "missing",
+      });
+
       return sendError(
         "Validation failed: " + errors.join(", "),
         ERROR_CODES.VALIDATION_ERROR,
@@ -223,6 +251,11 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
+      logger.warn("User creation failed - email already exists", {
+        correlationId,
+        email: "[REDACTED]",
+      });
+
       return sendError(
         "Email already in use",
         ERROR_CODES.EMAIL_ALREADY_IN_USE,
@@ -246,8 +279,19 @@ export async function POST(request: NextRequest) {
 
     // Invalidate cache after user creation
     await invalidateUsersCache();
-    // eslint-disable-next-line no-console
-    console.log("[CACHE INVALIDATED] Users list cache cleared");
+
+    const responseTime = Date.now() - startTime;
+    logger.logApiResponse(
+      "POST",
+      "/api/users",
+      201,
+      responseTime,
+      correlationId,
+      {
+        userId: user.id,
+        userRole: user.role,
+      }
+    );
 
     return sendSuccess(
       {
@@ -262,25 +306,9 @@ export async function POST(request: NextRequest) {
       HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error creating user:", error);
-
-    // Check for specific Prisma errors
-    if (error instanceof Error && error.message.includes("Unique constraint")) {
-      return sendError(
-        "A user with this email already exists",
-        ERROR_CODES.UNIQUE_CONSTRAINT_VIOLATION,
-        HTTP_STATUS_CODES.CONFLICT,
-        error.message
-      );
-    }
-
-    return sendError(
-      "Failed to create user",
-      ERROR_CODES.USER_CREATION_FAILED,
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      error
-    );
+    return handleAsyncError(error, "POST", "/api/users", {
+      correlationId,
+      operation: "user_creation",
+    });
   }
 }
-
