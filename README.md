@@ -2173,7 +2173,7 @@ const result = await prisma.$queryRaw`
 ---
 ```
 
-## íº€ Secure File Uploads with Pre-Signed URLs (AWS S3)
+## ï¿½ï¿½ï¿½ Secure File Uploads with Pre-Signed URLs (AWS S3)
 
 ### Overview
 
@@ -2455,9 +2455,9 @@ Configure in AWS S3 Console:
 3. Apply to `uploads/` prefix
 
 **Benefits:**
-- í²° Reduces storage costs
-- í·‘ï¸ Maintains data hygiene
-- í´ Auto-deletes sensitive files
+- ï¿½ï¿½ï¿½ Reduces storage costs
+- ï¿½ï¿½ï¿½ï¸ Maintains data hygiene
+- ï¿½ï¿½ï¿½ Auto-deletes sensitive files
 - â™»ï¸ Minimizes S3 bill
 
 **Database Cleanup** (Optional):

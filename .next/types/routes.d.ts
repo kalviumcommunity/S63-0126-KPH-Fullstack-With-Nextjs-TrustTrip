@@ -3,6 +3,8 @@
 
 type AppRoutes = "/" | "/dashboard" | "/login" | "/users" | "/users/[id]"
 type AppRouteHandlerRoutes = "/api/admin" | "/api/auth/login" | "/api/auth/signup" | "/api/bookings" | "/api/files" | "/api/payments" | "/api/projects" | "/api/refund" | "/api/reviews" | "/api/test" | "/api/upload" | "/api/users"
+type AppRoutes = "/"
+type AppRouteHandlerRoutes = "/api/admin" | "/api/auth/login" | "/api/auth/signup" | "/api/bookings" | "/api/payments" | "/api/projects" | "/api/refund" | "/api/reviews" | "/api/test" | "/api/users"
 type PageRoutes = never
 type LayoutRoutes = "/"
 type RedirectRoutes = never
