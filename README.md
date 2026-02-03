@@ -2173,7 +2173,7 @@ const result = await prisma.$queryRaw`
 ---
 ```
 
-## ��� Secure File Uploads with Pre-Signed URLs (AWS S3)
+## ��� Secure File Uploads with Pre-Signed URLs (AWS S3)
 
 ### Overview
 
@@ -2455,9 +2455,9 @@ Configure in AWS S3 Console:
 3. Apply to `uploads/` prefix
 
 **Benefits:**
-- ��� Reduces storage costs
-- ���️ Maintains data hygiene
-- ��� Auto-deletes sensitive files
+- ��� Reduces storage costs
+- ���️ Maintains data hygiene
+- ��� Auto-deletes sensitive files
 - ♻️ Minimizes S3 bill
 
 **Database Cleanup** (Optional):
@@ -2561,3 +2561,276 @@ curl -X POST http://localhost:3000/api/files \
 | **Signed URLs** | Cryptographic authenticity | AWS signature algorithm |
 
 ---
+
+---
+
+## Public & Protected Routing with Dynamic Segments
+
+### Overview
+
+This section documents the Next.js App Router implementation for public and protected routes, including dynamic segments for parameterized pages, navigation with breadcrumbs, and custom error handling.
+
+### Route Structure
+
+```
+app/
+├── page.tsx                      → Home (public)
+├── login/
+│    └── page.tsx                 → Public login page
+├── dashboard/
+│    └── page.tsx                 → Protected dashboard
+├── users/
+│    ├── page.tsx                 → Protected user list
+│    └── [id]/
+│         └── page.tsx            → Dynamic user profile (e.g., /users/1, /users/2)
+├── not-found.tsx                 → Custom 404 page
+└── layout.tsx                    → Root layout with navigation
+```
+
+### Route Map
+
+| Route | Type | Description | Access |
+|-------|------|-------------|--------|
+| `/` | Public | Home page with navigation info | Everyone |
+| `/login` | Public | Login page with mock authentication | Everyone |
+| `/dashboard` | Protected | Dashboard after login | Authenticated users only |
+| `/users` | Protected | List of all users | Authenticated users only |
+| `/users/[id]` | Dynamic | Individual user profile | Authenticated users only |
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||ntation Details
+
+###########################################################sx
+impoimpoimpoimpoimpoimpliimpoimpoimpoimpoimpoimpliimpoimpoimpoimpoimpoimpliimpoimpoimpoMetadata = {
+  title: "App Router Demo - Home",
+  description: "Welcome to the Next.js App Router routing demo",
+};
+
+export default function Home() {
+  return (
+    <main className="min-h-screen p-6">
+      <div className="max-w-4xl mx-auto text-center">
+        <h1 className="text-4xl font-bold mb-6">Welcome to the App 🚀</h1>
+        <p className="text-xl text-gray-600 mb-8">
+          This demo showcases Next.js App Router with public and protected routes.
+        </p>
+        <div className="flex flex-wrap justify-center gap-4">
+          <Link href="/login" className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+            Go to Login
+          </Link>
+          <Link href="/dashboard" className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg">
+            Try Dashboard (Protected)
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+```
+
+**Login Page (`app/login/page.tsx`):**
+```tsx
+"use client";
+
+impoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpo "js-cookie";
+import { useState } from "import { useState } from "import Loimport { useState } from "import { useState } from "import Loiming] = useState(false);
+
+  const handleLogin = () => {
+    setLoading(true);
+    // Simulate login - set a mock JWT token in cookies
+    Cookies    Cookies    Cookies    Cookies    Cookies    Cookies    Cookies    Cookid");
+  };
+
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+        <h1 className="text-2xl font-bold text-center mb-6">Login Page</h1>
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full py-3 px-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
+        >
+          {loading ? "Logging in..." : "Login"}
+        </b             </div>
+    </main>
+  );
+  );
+/main>
+            </div>
+n..." eware
+
+The middleware prThe middleware prThe middleware prThe middleware prThe middleware prTh app/midThe middleware prThe middleware prThe middleware prThe middleware prThe middleware prTh app/midThe middleware prThe middleware prThe middleware prSECRET = process.env.JWT_SECRET |The middleware prThehaThe middleware prThe middleware prThe outes that require authentication (cookie-based)
+ */
+const FRONTEND_PROTECTED_ROUTES = ["/dashboard", "/users"];
+
+fffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFffffffffOUfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFmCfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFftokfffffffalue;
+}
+
+
+
+fffffffisFfffffffffisFfff strifffffffisFfffffffffisFff jwt.fffffffisFfffffffffisFfff strifffffffisFfffffffffisFff jwt.fffffffisFfffffffffisFfff strifffffffisFfffft)fffffffisponse {
+  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUectToL  const loginUrl = new URL("/login", req.  const loginUrl.     const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  ],
+};
+````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in`````````````````````````````````````````````````````````````````````````````````````````````````````umb */}
+        <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
+          <Link href="/" className="hover:text-blue-600">Home</Link>
+          <span>/</span>
+          <Link href="/users" className="hover:text-blue-600">Users</Link>
+          <span>/</span>
+          <span className="text-gray-900">Profile {id}</span>
+        </nav>
+
+        {/* User Profile Card */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="flex items-center mb-6">
+            <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+              {id}
+            </div>
+            <div className="ml-6">
+              <h1 className="text-2xl font-bold">{userData.name}</h1>
+              <p className="text-gray-500">{userData.email}</p>
+            </div>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-sm text-gray-500">User ID</dt>
+              <dd className="text-lg font-medium">{userData.id}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">Role</dt>
+              <dd className=              <dd className=              <dd className=                </dl>
+        </div>
+
+                                                       className="mt-6 flex gap-4">
+                                as                                as                                                          as                      <Link href={`/users/${parseInt(id) + 1}`} className="px-4 py-2 bg-blue-100 text-blue-700 rounded">
+            Next User →
+          </Link>
+        </div>
+                                   
+
+*********************************************************************r *************************************************************`pa***************ives***************ram************************************************ m*************ser
+---------------------------------------------------------------- Layout
+
+**Root Layout with Navigation (`app/layout.tsx`):**
+```tsx
+import type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { Metadainimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { MetadainimtMimport type {onoimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimter import type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { Metadainimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { MetadainimtMimport type {onoimport type { Metadatainoimport type { Metadatai}>
+        {/* Navigation */}
+        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className"f        <nav className="flex items-center j        <nav className="fler:t        <nav className="flex items-center j       </     
+              <Link href="/login" className="text-gray-600 hover:text-blue-600">
+                Login
+              </Link>
+              <Link href="/dashboard" className="text-gray-600 hover:text-blue-600">
+                Dashboard
+              </Link>
+              <Link href="/users" className="text-gray-600 hover:text-blue-600">
+                Users
+              </Link>
+              <Link href="/users/1" className="text-gray-600 hover:text-blue-600">
+                User 1
+              </Link>
+            </div>
+          </div>
+        </nav>
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+#### 5. Custom 404 Error Page
+
+**Not Found Page (`app/not-found.tsx`):**
+```tsx
+import Link from "next/link";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "404 - Page Not Found",
+  description: "The page you're looking for doesn't exist",
+};
+
+export default function NotFound() {
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-6"    <main className="min-h-screen flex flex-col items-center justify-center p-6xt-6xl font-bold text-re    <main className=
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+          Page Not           Page Not                  Page Noext-g          Page Not           Page Not                  Page Noext-g          Pa been moved.
+        </p          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <Link href="/" className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                              </Link>
+          <Link href="/login" className= px-6          <Link href="/login700          <Link href="/login" className=       to          <Link h</Link>
+                                  main>
+  );
+}
+```
+
+### Testing the Routes
+
+#### 1. Test Public Routes
+
+```b```b```b```b```b```b```b```b```b```b```b```b```b```b```b``
+# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocase# Log# Log# Log# Log# Log# Log# Log# Logocalhttp://localhost:3000/u# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalho302: HT# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Lo)
+
+**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usgate to `/dashboar**Usin**Usin**Usin**Usin**Usin**Usinte**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usinh
+# Non-existent route
+curl http://localhost:3000/non-existent-page
+# Response# Response# Response# Response# Reflection: SEO, Navigation, and Error Handl# Response# Response# Resof Next.js App Router
+
+1. **Server-Side Rendering (SSR)**
+   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   -iptions
+   - Improves search engine ranking for individual user profiles
+
+3. **Semantic HTML**
+   - Proper heading hierarchy (h1, h2, etc.)
+   - Accessible navigation landmarks
+   - ARIA labels on interactive elements
+
+4. **Performance**
+   - Aut   - Aut   - Aut   - Aut   - Ae
+   - Optimized images with `next/image`
+   - Faster page loads improve SEO ranking
+
+#### How Breadcrumbs Improve Navigation
+
+1. **User Orientation*1. **User Or can easily understand their current location in the site hierarchy
+   - Quick navigation back to parent pages
+
+2. **SEO Benefits**
+   - Breadcrumb structured data helps search engines understand site structure
+   - Enhanced search result snippets with breadcrumb paths
+
+3. **Implementation Example:**
+   ```tsx
+   <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
+     <Link href="/">Home</Link>
+     <span>/</span>
+     <Link href="/users">Users</Link>
+     <span>/</span>
+     <span>Profile {id}</span>
+   </nav>
+   ```
+
+4. **Accessibility**
+   - Screen readers announc   - Screen readers announc   - Screen readers announc   - Scandling Route-Level Error States Gracefully
+
+1. **Custom 404 Page (`app/not-found.tsx`)**
+   - Provides mean   - Provides mean   - Provides mean   tio   - Proatives (Hom   - Provides mean   - Provides ent desi   - Provides mean   - Provides mean  ov   - Provides mean   - Provides mean   - 
+
+222222222222222222222222222222222222222nau222222222222222222222222222222222222222nau222222222222222222222222222222222222222nau222222222222222ash22222222222222222222222222222222222on
+   - G   - G   - G   - Gn    - G   - G   - G   - Gn    - G   - G   - G   - Gn    - G   - G   - G   - Gnie   - G   - G   - G   - Gn    - G   - G   - G   - Gn    - ata   - G   - G   - G   - Gn    y    - rn**
+   ```tsx
+   // For client-side errors
+   error.tsx (Next.js error boundary)
+   ```
+   - Catches and display   - Catches and dra   - Catches and display   - Catcheers   - Catches and ope   - Catches and display   back   - Ca- D shboard shows "Not logged in" state instead of error
+   - User profiles fall back to basic display when data unavailable
+   - No sensitive information exposed in   - No sensitive information expo
+
+| Aspect | Implementation | Benefit |
+|--------|---------------|---------|
+| **Public Routes** | `/`, `/login` | No auth required, accessible to all |
+| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middlewaved search engine visibility |
+| **Navigation** | Breadcrumbs in layout | Better user orientation and UX |
+| **Error Handling** | Custom 404, middleware redirects | Graceful degradation, better UX |
+
+---
+
