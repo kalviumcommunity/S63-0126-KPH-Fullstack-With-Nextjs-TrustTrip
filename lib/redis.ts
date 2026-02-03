@@ -53,4 +53,3 @@ export const CACHE_TTL = {
 } as const;
 
 export default redis;
-

@@ -2172,3 +2172,665 @@ const result = await prisma.$queryRaw`
 
 ---
 ```
+
+## ��� Secure File Uploads with Pre-Signed URLs (AWS S3)
+
+### Overview
+
+This feature enables secure, scalable file uploads using AWS S3 pre-signed URLs. Instead of uploading files through your backend server (which consumes bandwidth and limits throughput), files are uploaded directly to S3 using temporary, cryptographically signed URLs. This approach provides:
+
+✅ **Security**: Files never pass through your backend; credentials are not exposed to clients  
+✅ **Scalability**: Direct S3 uploads bypass your server, reducing load  
+✅ **Cost Efficiency**: Reduced bandwidth consumption on your backend  
+✅ **Audit Trail**: File metadata stored in database for tracking and compliance  
+
+### Architecture Diagram
+
+```
+┌─────────────┐                    ┌──────────────┐
+│   Frontend  │                    │   Your API   │
+│  (Browser)  │                    │   Backend    │
+└──────┬──────┘                    └──────┬───────┘
+       │                                  │
+       │ (1) POST /api/upload             │
+       │ {filename, size, type}           │
+       ├─────────────────────────────────>│
+       │                                  │
+       │                    (2) Generate  │
+       │              Pre-signed URL      │
+       │              (AWS SDK)           │
+       │                                  │
+       │ (3) Return uploadURL             │
+       │<─────────────────────────────────┤
+       │                                  │
+       │  (4) PUT file directly to S3     │
+       │      using uploadURL             │
+       ├─────────────────────────────────────────┐
+       │                                         │
+       │                              ┌──────────▼────────┐
+       │                              │   AWS S3 Bucket   │
+       │                              │  (Public-Read)    │
+       │                              └───────────────────┘
+       │
+       │ (5) File uploaded successfully
+       │ POST /api/files
+       │ {fileName, fileURL, fileSize}
+       ├─────────────────────────────────────────>
+       │                                  │
+       │                    (6) Save to   │
+       │                    PostgreSQL    │
+       │                                  │
+       │ (7) Return file metadata        │
+       │<─────────────────────────────────┤
+       │
+```
+
+### Implementation Files
+
+The following files were created/modified for file upload functionality:
+
+- **[app/api/upload/route.ts](app/api/upload/route.ts)** - Generates pre-signed URLs for S3 uploads
+- **[app/api/files/route.ts](app/api/files/route.ts)** - Manages file metadata storage and retrieval
+- **[prisma/schema.prisma](prisma/schema.prisma)** - Added `File` model for database tracking
+- **[.env.example](.env.example)** - AWS configuration template
+
+### Setup Instructions
+
+#### 1. Install Dependencies
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+```
+
+#### 2. Configure AWS Credentials
+
+Create an `.env.local` file with your AWS S3 credentials:
+
+```bash
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
+AWS_REGION=ap-south-1
+AWS_BUCKET_NAME=your-bucket-name
+```
+
+> **How to get AWS credentials:**
+> 1. Go to [AWS IAM Console](https://console.aws.amazon.com/iam/)
+> 2. Create a new IAM user with `AmazonS3FullAccess` permissions
+> 3. Generate access keys (save them securely)
+> 4. Add them to your `.env.local`
+
+#### 3. Update Database
+
+The Prisma schema includes a new `File` model:
+
+```prisma
+model File {
+  id            String          @id @default(cuid())
+  name          String
+  url           String          @unique
+  size          Int             
+  fileType      String          
+  uploadedAt    DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  expiresAt     DateTime?       
+
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([uploadedAt])
+}
+```
+
+Run migration:
+
+```bash
+npx prisma migrate dev --name add_file_model
+```
+
+### API Endpoints Reference
+
+#### POST /api/upload - Generate Pre-Signed URL
+
+Generates a temporary upload URL for direct S3 upload with validation.
+
+**Request:**
+```json
+{
+  "filename": "profile.png",
+  "fileType": "image/png",
+  "fileSize": 2048,
+  "userId": "user_id_123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "uploadURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/uploads/user_id_123/1234567890-abc123.png?X-Amz-Signature=...",
+  "fileURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/uploads/user_id_123/1234567890-abc123.png",
+  "s3Key": "uploads/user_id_123/1234567890-abc123.png",
+  "expiresIn": 3600
+}
+```
+
+**Key Features:**
+- ✅ File type whitelist validation (JPEG, PNG, GIF, WebP, PDF, TXT, DOC, DOCX)
+- ✅ File size validation (1 byte to 10 MB)
+- ✅ Unique S3 key generation per user per upload
+- ✅ Pre-signed URL valid for 1 hour
+
+#### POST /api/files - Store File Metadata
+
+Saves file metadata to PostgreSQL after successful S3 upload.
+
+**Request:**
+```json
+{
+  "fileName": "profile.png",
+  "fileURL": "https://your-bucket.s3.ap-south-1.amazonaws.com/...",
+  "fileSize": 2048,
+  "fileType": "image/png",
+  "userId": "user_id_123",
+  "expiresAt": "2026-03-04T10:00:00Z"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "file_123",
+    "name": "profile.png",
+    "url": "https://...",
+    "fileType": "image/png",
+    "size": 2048,
+    "userId": "user_id_123",
+    "uploadedAt": "2026-02-02T10:00:00Z"
+  }
+}
+```
+
+#### GET /api/files - List User's Files
+
+Retrieves files for a user with pagination and sorting.
+
+**Query Parameters:**
+```
+GET /api/files?userId=user_id_123&page=1&limit=10&sortBy=uploadedAt&sortOrder=desc
+```
+
+#### DELETE /api/files - Delete File
+
+Removes a file record from database.
+
+**Query Parameters:**
+```
+DELETE /api/files?fileId=file_id_123
+```
+
+### Complete Upload Flow Example
+
+**Frontend Implementation:**
+
+```typescript
+// Step 1: Request pre-signed URL
+const uploadResponse = await fetch('/api/upload', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    filename: 'profile.png',
+    fileType: 'image/png',
+    fileSize: file.size,
+    userId: 'user_id_123',
+  }),
+});
+
+const { uploadURL, fileURL } = await uploadResponse.json();
+
+// Step 2: Upload directly to S3
+const s3Response = await fetch(uploadURL, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'image/png' },
+  body: file,
+});
+
+// Step 3: Store metadata
+if (s3Response.ok) {
+  const dbResponse = await fetch('/api/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName: 'profile.png',
+      fileURL: fileURL,
+      fileSize: file.size,
+      fileType: 'image/png',
+      userId: 'user_id_123',
+    }),
+  });
+  
+  const fileData = await dbResponse.json();
+  console.log('Upload complete:', fileData);
+}
+```
+
+### File Type & Size Validation
+
+**Allowed Types:**
+- Images: JPEG, PNG, GIF, WebP
+- Documents: PDF, TXT, DOC, DOCX
+
+**Size Limits:**
+- Minimum: 1 byte
+- Maximum: 10 MB
+
+Edit limits in [app/api/upload/route.ts](app/api/upload/route.ts#L16-L35).
+
+### Pre-Signed URL Expiry & Security
+
+**URL Expiration:** 1 hour (3600 seconds)
+- Prevents unauthorized access if URL is leaked
+- Each request generates a new unique URL
+
+**Cryptographic Signing:**
+- URLs signed with AWS private key
+- Tampering invalidates signature
+- S3 rejects expired/invalid requests
+
+**Access Control:**
+- Current: `public-read` (anyone with URL can access)
+- Optional: Remove ACL for private files, use signed read URLs
+
+### Lifecycle Management & Cost Optimization
+
+**S3 Lifecycle Policy** automatically deletes old files:
+
+Configure in AWS S3 Console:
+1. Select bucket → Management → Lifecycle rules
+2. Create rule to expire objects after 30 days
+3. Apply to `uploads/` prefix
+
+**Benefits:**
+- ��� Reduces storage costs
+- ���️ Maintains data hygiene
+- ��� Auto-deletes sensitive files
+- ♻️ Minimizes S3 bill
+
+**Database Cleanup** (Optional):
+```typescript
+// Scheduled job to remove expired DB records
+const expired = await prisma.file.deleteMany({
+  where: { expiresAt: { lt: new Date() } },
+});
+```
+
+### Security Considerations
+
+#### Public vs. Private File Access
+
+| Aspect | Public | Private |
+|--------|--------|---------|
+| **Access** | Anyone with URL | Authenticated users only |
+| **Use Case** | Profiles, galleries | Invoices, contracts, docs |
+| **Setup** | `ACL: "public-read"` | Remove ACL, use read URLs |
+| **Cost** | Slightly higher | Lower (controlled) |
+
+#### Key Security Features
+
+- ✅ **SQL Injection Prevention**: Prisma parameterized queries
+- ✅ **File Validation**: Whitelist types, validate size server-side
+- ✅ **Unique Keys**: Sanitized filenames prevent collisions
+- ✅ **HTTPS**: All URLs use HTTPS by default
+- ✅ **Rate Limiting**: Add per-user upload limits in production
+- ✅ **Access Logs**: Enable S3 access logging for audit trails
+
+### Testing the Upload Feature
+
+**Using cURL:**
+
+```bash
+# Step 1: Get pre-signed URL
+UPLOAD_RESPONSE=$(curl -X POST http://localhost:3000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "test.png",
+    "fileType": "image/png",
+    "fileSize": 2048,
+    "userId": "test-user"
+  }')
+
+UPLOAD_URL=$(echo $UPLOAD_RESPONSE | jq -r '.uploadURL')
+FILE_URL=$(echo $UPLOAD_RESPONSE | jq -r '.fileURL')
+
+# Step 2: Upload to S3
+curl -X PUT "$UPLOAD_URL" \
+  -H "Content-Type: image/png" \
+  --data-binary @test.png
+
+# Step 3: Save metadata
+curl -X POST http://localhost:3000/api/files \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"fileName\": \"test.png\",
+    \"fileURL\": \"$FILE_URL\",
+    \"fileSize\": 2048,
+    \"fileType\": \"image/png\",
+    \"userId\": \"test-user\"
+  }"
+```
+
+**Verify Success:**
+- ✅ File accessible in browser (paste fileURL)
+- ✅ Visible in AWS S3 console
+- ✅ Record in PostgreSQL: `SELECT * FROM "File" WHERE name='test.png'`
+
+### Common Issues & Solutions
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `AccessDenied` | Invalid credentials | Check `.env.local`, regenerate IAM keys |
+| `NoSuchBucket` | Wrong bucket name | Verify `AWS_BUCKET_NAME` |
+| `SignatureDoesNotMatch` | Expired/tampered URL | URLs expire in 1h, regenerate |
+| `403 Forbidden` | File not public | Add `ACL: "public-read"` |
+| `Duplicate URL` | File already exists | Unique constraint prevents duplicates |
+
+### Best Practices
+
+1. ✅ Validate file type & size **server-side** (never trust client)
+2. ✅ Use unique file names: `uploads/{userId}/{timestamp}-{random}.ext`
+3. ✅ Set short expiry on pre-signed URLs (1 hour is good)
+4. ✅ Always store metadata in DB for audit trails
+5. ✅ Implement lifecycle policies for cleanup
+6. ✅ Monitor S3 costs via CloudWatch
+7. ✅ Use HTTPS everywhere (browser → API → S3)
+8. ✅ Enable S3 access logging for security audits
+
+### Summary Table
+
+| Feature | Benefit | Implementation |
+|---------|---------|-----------------|
+| **Pre-signed URLs** | Direct S3 uploads, no server bottleneck | AWS SDK `getSignedUrl()` |
+| **File Validation** | Prevents malicious uploads | Type whitelist, size check |
+| **DB Tracking** | Audit trail for compliance | Prisma `File` model |
+| **Lifecycle Policies** | Auto-delete old files, reduce costs | S3 lifecycle rules |
+| **Public Access** | Shareable URLs for collaboration | `ACL: "public-read"` |
+| **Signed URLs** | Cryptographic authenticity | AWS signature algorithm |
+
+---
+
+---
+
+## Public & Protected Routing with Dynamic Segments
+
+### Overview
+
+This section documents the Next.js App Router implementation for public and protected routes, including dynamic segments for parameterized pages, navigation with breadcrumbs, and custom error handling.
+
+### Route Structure
+
+```
+app/
+├── page.tsx                      → Home (public)
+├── login/
+│    └── page.tsx                 → Public login page
+├── dashboard/
+│    └── page.tsx                 → Protected dashboard
+├── users/
+│    ├── page.tsx                 → Protected user list
+│    └── [id]/
+│         └── page.tsx            → Dynamic user profile (e.g., /users/1, /users/2)
+├── not-found.tsx                 → Custom 404 page
+└── layout.tsx                    → Root layout with navigation
+```
+
+### Route Map
+
+| Route | Type | Description | Access |
+|-------|------|-------------|--------|
+| `/` | Public | Home page with navigation info | Everyone |
+| `/login` | Public | Login page with mock authentication | Everyone |
+| `/dashboard` | Protected | Dashboard after login | Authenticated users only |
+| `/users` | Protected | List of all users | Authenticated users only |
+| `/users/[id]` | Dynamic | Individual user profile | Authenticated users only |
+|||||||||||||||||||||||||||||||||||||||||||||||||||||||||ntation Details
+
+###########################################################sx
+impoimpoimpoimpoimpoimpliimpoimpoimpoimpoimpoimpliimpoimpoimpoimpoimpoimpliimpoimpoimpoMetadata = {
+  title: "App Router Demo - Home",
+  description: "Welcome to the Next.js App Router routing demo",
+};
+
+export default function Home() {
+  return (
+    <main className="min-h-screen p-6">
+      <div className="max-w-4xl mx-auto text-center">
+        <h1 className="text-4xl font-bold mb-6">Welcome to the App 🚀</h1>
+        <p className="text-xl text-gray-600 mb-8">
+          This demo showcases Next.js App Router with public and protected routes.
+        </p>
+        <div className="flex flex-wrap justify-center gap-4">
+          <Link href="/login" className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+            Go to Login
+          </Link>
+          <Link href="/dashboard" className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg">
+            Try Dashboard (Protected)
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+```
+
+**Login Page (`app/login/page.tsx`):**
+```tsx
+"use client";
+
+impoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpoimpo "js-cookie";
+import { useState } from "import { useState } from "import Loimport { useState } from "import { useState } from "import Loiming] = useState(false);
+
+  const handleLogin = () => {
+    setLoading(true);
+    // Simulate login - set a mock JWT token in cookies
+    Cookies    Cookies    Cookies    Cookies    Cookies    Cookies    Cookies    Cookid");
+  };
+
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+        <h1 className="text-2xl font-bold text-center mb-6">Login Page</h1>
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full py-3 px-4 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
+        >
+          {loading ? "Logging in..." : "Login"}
+        </b             </div>
+    </main>
+  );
+  );
+/main>
+            </div>
+n..." eware
+
+The middleware prThe middleware prThe middleware prThe middleware prThe middleware prTh app/midThe middleware prThe middleware prThe middleware prThe middleware prThe middleware prTh app/midThe middleware prThe middleware prThe middleware prSECRET = process.env.JWT_SECRET |The middleware prThehaThe middleware prThe middleware prThe outes that require authentication (cookie-based)
+ */
+const FRONTEND_PROTECTED_ROUTES = ["/dashboard", "/users"];
+
+fffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFffffffffOUfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFmCfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFfffffffffisFftokfffffffalue;
+}
+
+
+
+fffffffisFfffffffffisFfff strifffffffisFfffffffffisFff jwt.fffffffisFfffffffffisFfff strifffffffisFfffffffffisFff jwt.fffffffisFfffffffffisFfff strifffffffisFfffft)fffffffisponse {
+  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUectToL  const loginUrl = new URL("/login", req.  const loginUrl.     const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  const loe.r  const loginUrl = new URL("/login", req.  const loginUrl.searchParams.set("redirect", req.nextUrl.pa  const loginUrl  N  ],
+};
+````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````in`````````````````````````````````````````````````````````````````````````````````````````````````````umb */}
+        <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
+          <Link href="/" className="hover:text-blue-600">Home</Link>
+          <span>/</span>
+          <Link href="/users" className="hover:text-blue-600">Users</Link>
+          <span>/</span>
+          <span className="text-gray-900">Profile {id}</span>
+        </nav>
+
+        {/* User Profile Card */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="flex items-center mb-6">
+            <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+              {id}
+            </div>
+            <div className="ml-6">
+              <h1 className="text-2xl font-bold">{userData.name}</h1>
+              <p className="text-gray-500">{userData.email}</p>
+            </div>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-sm text-gray-500">User ID</dt>
+              <dd className="text-lg font-medium">{userData.id}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">Role</dt>
+              <dd className=              <dd className=              <dd className=                </dl>
+        </div>
+
+                                                       className="mt-6 flex gap-4">
+                                as                                as                                                          as                      <Link href={`/users/${parseInt(id) + 1}`} className="px-4 py-2 bg-blue-100 text-blue-700 rounded">
+            Next User →
+          </Link>
+        </div>
+                                   
+
+*********************************************************************r *************************************************************`pa***************ives***************ram************************************************ m*************ser
+---------------------------------------------------------------- Layout
+
+**Root Layout with Navigation (`app/layout.tsx`):**
+```tsx
+import type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { Metadainimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { MetadainimtMimport type {onoimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimter import type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { Metadainimport type { Metadataimport type { Meimimport type { Metadataimport type { Meimimport type { MetadainimtMimport type {onoimport type { Metadatainoimport type { Metadatai}>
+        {/* Navigation */}
+        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className="flex items-center j        <nav className"f        <nav className="flex items-center j        <nav className="fler:t        <nav className="flex items-center j       </     
+              <Link href="/login" className="text-gray-600 hover:text-blue-600">
+                Login
+              </Link>
+              <Link href="/dashboard" className="text-gray-600 hover:text-blue-600">
+                Dashboard
+              </Link>
+              <Link href="/users" className="text-gray-600 hover:text-blue-600">
+                Users
+              </Link>
+              <Link href="/users/1" className="text-gray-600 hover:text-blue-600">
+                User 1
+              </Link>
+            </div>
+          </div>
+        </nav>
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+#### 5. Custom 404 Error Page
+
+**Not Found Page (`app/not-found.tsx`):**
+```tsx
+import Link from "next/link";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "404 - Page Not Found",
+  description: "The page you're looking for doesn't exist",
+};
+
+export default function NotFound() {
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-6"    <main className="min-h-screen flex flex-col items-center justify-center p-6xt-6xl font-bold text-re    <main className=
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+          Page Not           Page Not                  Page Noext-g          Page Not           Page Not                  Page Noext-g          Pa been moved.
+        </p          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <Link href="/" className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                              </Link>
+          <Link href="/login" className= px-6          <Link href="/login700          <Link href="/login" className=       to          <Link h</Link>
+                                  main>
+  );
+}
+```
+
+### Testing the Routes
+
+#### 1. Test Public Routes
+
+```b```b```b```b```b```b```b```b```b```b```b```b```b```b```b``
+# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocase# Log# Log# Log# Log# Log# Log# Log# Logocalhttp://localhost:3000/u# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Log# Log# Log# Logocalho302: HT# Log# Log# Log# Log# Log# Log# Log# Logocalhost:3000# Log# Log# Log# Log# Lo)
+
+**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usgate to `/dashboar**Usin**Usin**Usin**Usin**Usin**Usinte**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usin**Usinh
+# Non-existent route
+curl http://localhost:3000/non-existent-page
+# Response# Response# Response# Response# Reflection: SEO, Navigation, and Error Handl# Response# Response# Resof Next.js App Router
+
+1. **Server-Side Rendering (SSR)**
+   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   - Pag   -iptions
+   - Improves search engine ranking for individual user profiles
+
+3. **Semantic HTML**
+   - Proper heading hierarchy (h1, h2, etc.)
+   - Accessible navigation landmarks
+   - ARIA labels on interactive elements
+
+4. **Performance**
+   - Aut   - Aut   - Aut   - Aut   - Ae
+   - Optimized images with `next/image`
+   - Faster page loads improve SEO ranking
+
+#### How Breadcrumbs Improve Navigation
+
+1. **User Orientation*1. **User Or can easily understand their current location in the site hierarchy
+   - Quick navigation back to parent pages
+
+2. **SEO Benefits**
+   - Breadcrumb structured data helps search engines understand site structure
+   - Enhanced search result snippets with breadcrumb paths
+
+3. **Implementation Example:**
+   ```tsx
+   <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
+     <Link href="/">Home</Link>
+     <span>/</span>
+     <Link href="/users">Users</Link>
+     <span>/</span>
+     <span>Profile {id}</span>
+   </nav>
+   ```
+
+4. **Accessibility**
+   - Screen readers announc   - Screen readers announc   - Screen readers announc   - Scandling Route-Level Error States Gracefully
+
+1. **Custom 404 Page (`app/not-found.tsx`)**
+   - Provides mean   - Provides mean   - Provides mean   tio   - Proatives (Hom   - Provides mean   - Provides ent desi   - Provides mean   - Provides mean  ov   - Provides mean   - Provides mean   - 
+
+222222222222222222222222222222222222222nau222222222222222222222222222222222222222nau222222222222222222222222222222222222222nau222222222222222ash22222222222222222222222222222222222on
+   - G   - G   - G   - Gn    - G   - G   - G   - Gn    - G   - G   - G   - Gn    - G   - G   - G   - Gnie   - G   - G   - G   - Gn    - G   - G   - G   - Gn    - ata   - G   - G   - G   - Gn    y    - rn**
+   ```tsx
+   // For client-side errors
+   error.tsx (Next.js error boundary)
+   ```
+   - Catches and display   - Catches and dra   - Catches and display   - Catcheers   - Catches and ope   - Catches and display   back   - Ca- D shboard shows "Not logged in" state instead of error
+   - User profiles fall back to basic display when data unavailable
+   - No sensitive information exposed in   - No sensitive information expo
+
+| Aspect | Implementation | Benefit |
+|--------|---------------|---------|
+| **Public Routes** | `/`, `/login` | No auth required, accessible to all |
+| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middleware| **Protected Routes** | `/dashboard`, `/users` | Middlewaved search engine visibility |
+| **Navigation** | Breadcrumbs in layout | Better user orientation and UX |
+| **Error Handling** | Custom 404, middleware redirects | Graceful degradation, better UX |
+
+---
+

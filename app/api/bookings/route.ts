@@ -72,7 +72,9 @@ export async function GET(request: NextRequest) {
       const cachedData = JSON.parse(cached);
       const responseTime = Date.now() - startTime;
       // eslint-disable-next-line no-console
-      console.log(`[CACHE HIT] Bookings list - Response time: ${responseTime}ms`);
+      console.log(
+        `[CACHE HIT] Bookings list - Response time: ${responseTime}ms`
+      );
       return NextResponse.json({
         success: true,
         data: cachedData.bookings,
@@ -133,7 +135,9 @@ export async function GET(request: NextRequest) {
 
     const responseTime = Date.now() - startTime;
     // eslint-disable-next-line no-console
-    console.log(`[CACHE MISS] Bookings list - Response time: ${responseTime}ms`);
+    console.log(
+      `[CACHE MISS] Bookings list - Response time: ${responseTime}ms`
+    );
 
     return NextResponse.json({
       success: true,
@@ -234,4 +238,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

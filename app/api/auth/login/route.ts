@@ -33,7 +33,11 @@ export async function POST(request: NextRequest) {
     // Check if user has a password (might be OAuth users)
     if (!user.password) {
       return NextResponse.json(
-        { success: false, error: "This account uses social login. Please sign in with your provider." },
+        {
+          success: false,
+          error:
+            "This account uses social login. Please sign in with your provider.",
+        },
         { status: 401 }
       );
     }
@@ -81,4 +85,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

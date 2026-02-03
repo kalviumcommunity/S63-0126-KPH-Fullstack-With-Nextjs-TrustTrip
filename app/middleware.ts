@@ -23,18 +23,90 @@ interface JWTPayload {
 }
 
 /**
+ * Frontend routes that require authentication (cookie-based)
+ */
+const FRONTEND_PROTECTED_ROUTES = ["/dashboard", "/users"];
+
+/**
+ * Check if the request is for a frontend protected route
+ */
+function isFrontendProtectedRoute(pathname: string): boolean {
+  return FRONTEND_PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
+}
+
+/**
+ * Get token from cookies for frontend routes
+ */
+function getTokenFromCookies(req: NextRequest): string | undefined {
+  return req.cookies.get("token")?.value;
+}
+
+/**
+ * Extract JWT token from Authorization header
+ * Expected format: "Bearer <token>"
+ */
+function extractToken(authHeader: string | null): string | null {
+  if (!authHeader) return null;
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") {
+    return null;
+  }
+  return parts[1];
+}
+
+/**
+ * Build a redirect response to login page
+ */
+function redirectToLogin(req: NextRequest): NextResponse {
+  const loginUrl = new URL("/login", req.url);
+  loginUrl.searchParams.set("redirect", req.nextUrl.pathname);
+  return NextResponse.redirect(loginUrl);
+}
+
+/**
+ * Build a standardized forbidden response (403) for API routes
+ */
+function buildForbiddenResponse(message: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+      error: {
+        code: "FORBIDDEN",
+        details: "Insufficient permissions to access this resource",
+      },
+      timestamp: new Date().toISOString(),
+    },
+    { status: 403 }
+  );
+}
+
+/**
+ * Verify JWT token and return decoded payload
+ */
+function verifyToken(token: string): JWTPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JWTPayload;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Authorization Middleware
  *
  * This middleware intercepts all requests and:
  * 1. Allows public routes without checking authentication
- * 2. Checks for valid JWT token in Authorization header for protected routes
- * 3. Validates JWT signature and expiration
- * 4. Enforces role-based access control (RBAC)
- * 5. Attaches user information to request headers for downstream handlers
+ * 2. For API routes: Checks Authorization header for JWT token
+ * 3. For frontend routes (/dashboard, /users): Checks cookies for token
+ * 4. Validates JWT signature and expiration
+ * 5. Enforces role-based access control (RBAC)
+ * 6. Redirects unauthorized frontend users to login page
  *
  * Flow:
  * Public Route? → Allow
- * Protected Route? → Check Token → Validate JWT → Check Role → Allow/Deny
+ * Frontend Protected Route? → Check Cookie Token → Valid? → Allow/Redirect
+ * API Protected Route? → Check Header Token → Validate JWT → Check Role → Allow/Deny
  */
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -44,12 +116,41 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check if route requires authentication
+  // Handle frontend protected routes (cookie-based auth)
+  if (isFrontendProtectedRoute(pathname)) {
+    const token = getTokenFromCookies(req);
+
+    if (!token) {
+      // No token in cookies, redirect to login
+      return redirectToLogin(req);
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      // Invalid or expired token, redirect to login
+      return redirectToLogin(req);
+    }
+
+    // Token is valid, allow access
+    // Attach user info to request headers for route handlers
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("x-user-id", decoded.id);
+    requestHeaders.set("x-user-email", decoded.email);
+    requestHeaders.set("x-user-role", decoded.role);
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+  }
+
+  // Handle API protected routes (header-based auth)
   if (isAuthRequired(pathname)) {
     const authHeader = req.headers.get("authorization");
 
     if (!authHeader) {
-      return buildUnauthorizedResponse(
+      return buildForbiddenResponse(
         "Authorization header missing. Use: Authorization: Bearer <token>"
       );
     }
@@ -57,7 +158,7 @@ export function middleware(req: NextRequest) {
     const token = extractToken(authHeader);
 
     if (!token) {
-      return buildUnauthorizedResponse(
+      return buildForbiddenResponse(
         "Invalid authorization header format. Use: Authorization: Bearer <token>"
       );
     }
@@ -119,54 +220,6 @@ export function middleware(req: NextRequest) {
   }
 
   return NextResponse.next();
-}
-
-/**
- * Extract JWT token from Authorization header
- * Expected format: "Bearer <token>"
- */
-function extractToken(authHeader: string): string | null {
-  const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") {
-    return null;
-  }
-  return parts[1];
-}
-
-/**
- * Build a standardized unauthorized response (401)
- */
-function buildUnauthorizedResponse(message: string) {
-  return NextResponse.json(
-    {
-      success: false,
-      message,
-      error: {
-        code: "UNAUTHORIZED",
-        details: "Please provide a valid authentication token",
-      },
-      timestamp: new Date().toISOString(),
-    },
-    { status: 401 }
-  );
-}
-
-/**
- * Build a standardized forbidden response (403)
- */
-function buildForbiddenResponse(message: string) {
-  return NextResponse.json(
-    {
-      success: false,
-      message,
-      error: {
-        code: "FORBIDDEN",
-        details: "Insufficient permissions to access this resource",
-      },
-      timestamp: new Date().toISOString(),
-    },
-    { status: 403 }
-  );
 }
 
 /**
