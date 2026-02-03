@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
+import { sendBookingConfirmationEmail } from "@/lib/email";
+import { handleAsyncError } from "@/lib/errorHandler";
+import { logger } from "@/lib/logger";
 
 /**
  * Generate a unique cache key based on query parameters
@@ -147,11 +150,7 @@ export async function GET(request: NextRequest) {
       responseTime,
     });
   } catch (error) {
-    console.error("Error fetching bookings:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch bookings" },
-      { status: 500 }
-    );
+    return handleAsyncError(error, 'GET', '/api/bookings');
   }
 }
 
@@ -222,6 +221,47 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line no-console
     console.log("[CACHE INVALIDATED] Bookings list cache cleared");
 
+    // Send booking confirmation email (non-blocking)
+    // Email failures won't affect booking success
+    sendBookingConfirmationEmail(booking.user.email, booking.user.name, {
+      id: booking.id,
+      projectTitle: booking.project.title,
+      destination: booking.project.destination,
+      quantity: booking.quantity,
+      totalPrice: booking.totalPrice,
+      bookingDate: booking.createdAt,
+    })
+      .then((emailResult) => {
+        if (emailResult.success) {
+          logger.info(
+            `Booking confirmation email sent to ${booking.user.email}`,
+            {
+              bookingId: booking.id,
+              messageId: emailResult.messageId,
+              developmentMode: emailResult.developmentMode,
+              correlationId: logger.generateCorrelationId(),
+            }
+          );
+        } else {
+          logger.error(
+            `Failed to send booking confirmation email to ${booking.user.email}: ${emailResult.error}`,
+            undefined,
+            {
+              correlationId: logger.generateCorrelationId(),
+            }
+          );
+        }
+      })
+      .catch((error) => {
+        logger.error(
+          `Booking confirmation email error for ${booking.user.email}: ${error}`,
+          error as Error,
+          {
+            correlationId: logger.generateCorrelationId(),
+          }
+        );
+      });
+
     return NextResponse.json(
       {
         success: true,
@@ -231,10 +271,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error creating booking:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create booking" },
-      { status: 500 }
-    );
+    return handleAsyncError(error, 'POST', '/api/bookings');
   }
 }

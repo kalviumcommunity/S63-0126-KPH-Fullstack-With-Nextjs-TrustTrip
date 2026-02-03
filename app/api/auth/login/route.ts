@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { generateToken } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { handleAsyncError } from "@/lib/errorHandler";
 
 // POST /api/auth/login - Authenticate user and return JWT token
 export async function POST(request: NextRequest) {
@@ -78,10 +79,6 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error during login:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to authenticate user" },
-      { status: 500 }
-    );
+    return handleAsyncError(error, 'POST', '/api/auth/login');
   }
 }
