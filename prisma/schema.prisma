@@ -130,6 +130,7 @@ model User {
   bookings      Booking[]
   payments      Payment[]
   refunds       Refund[]
+  files         File[]
 
   @@index([email])
 }
@@ -293,4 +294,23 @@ enum RefundStatus {
   APPROVED
   PROCESSED
   REJECTED
+}
+// File model - stores file metadata for uploads
+model File {
+  id            String          @id @default(cuid())
+  name          String
+  url           String          @unique
+  size          Int             // file size in bytes
+  fileType      String          // MIME type: image/png, application/pdf, etc.
+  uploadedAt    DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  expiresAt     DateTime?       // for lifecycle management - auto-delete after expiry
+  
+  // Foreign keys
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([uploadedAt])
 }
