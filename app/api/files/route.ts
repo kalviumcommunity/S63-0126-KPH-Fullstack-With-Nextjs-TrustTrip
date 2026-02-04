@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendSuccess, sendError } from "@/lib/responseHandler";
 import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
+import { handleAsyncError } from "@/lib/errorHandler";
 
 /**
  * POST /api/files
@@ -41,8 +42,8 @@ export async function POST(req: NextRequest) {
     if (!fileName || !fileURL || !fileSize || !fileType || !userId) {
       return sendError(
         "Missing required fields",
-        HTTP_STATUS_CODES.BAD_REQUEST,
-        ERROR_CODES.VALIDATION_ERROR
+        ERROR_CODES.VALIDATION_ERROR,
+        HTTP_STATUS_CODES.BAD_REQUEST
       );
     }
 
@@ -105,13 +106,9 @@ export async function POST(req: NextRequest) {
       HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
-    console.error("Error creating file record:", error);
-    return sendError(
-      "Failed to store file metadata",
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      ERROR_CODES.DATABASE_ERROR,
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    return handleAsyncError(error, 'POST', '/api/files', {
+      operation: 'file_metadata_storage'
+    });
   }
 }
 
@@ -220,13 +217,7 @@ export async function GET(req: NextRequest) {
       "Files retrieved successfully"
     );
   } catch (error) {
-    console.error("Error fetching files:", error);
-    return sendError(
-      "Failed to fetch files",
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      ERROR_CODES.DATABASE_ERROR,
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    return handleAsyncError(error, 'GET', '/api/files');
   }
 }
 
@@ -281,12 +272,8 @@ export async function DELETE(req: NextRequest) {
       HTTP_STATUS_CODES.OK
     );
   } catch (error) {
-    console.error("Error deleting file:", error);
-    return sendError(
-      "Failed to delete file",
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      ERROR_CODES.DATABASE_ERROR,
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    return handleAsyncError(error, 'DELETE', '/api/files', {
+      operation: 'file_deletion'
+    });
   }
 }

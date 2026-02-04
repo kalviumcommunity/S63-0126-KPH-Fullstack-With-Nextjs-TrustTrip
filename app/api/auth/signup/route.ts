@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import { sendWelcomeEmail } from "@/lib/email";
+import { handleAsyncError } from "@/lib/errorHandler";
+import { logger } from "@/lib/logger";
 
 // POST /api/auth/signup - Register a new user
 export async function POST(request: NextRequest) {
@@ -69,6 +72,37 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Send welcome email (non-blocking)
+    // Note: We don't await this to avoid blocking the response
+    // Email failures won't affect user registration success
+    sendWelcomeEmail(user.email, user.name)
+      .then((emailResult) => {
+        if (emailResult.success) {
+          logger.info(`Welcome email sent to ${user.email}`, {
+            messageId: emailResult.messageId,
+            developmentMode: emailResult.developmentMode,
+            correlationId: logger.generateCorrelationId(),
+          });
+        } else {
+          logger.error(
+            `Failed to send welcome email to ${user.email}: ${emailResult.error}`,
+            undefined,
+            {
+              correlationId: logger.generateCorrelationId(),
+            }
+          );
+        }
+      })
+      .catch((error) => {
+        logger.error(
+          `Welcome email error for ${user.email}: ${error}`, 
+          error as Error,
+          {
+            correlationId: logger.generateCorrelationId(),
+          }
+        );
+      });
+
     // Return success response (without password)
     return NextResponse.json(
       {
@@ -85,10 +119,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error during signup:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to create user" },
-      { status: 500 }
-    );
+    return handleAsyncError(error, 'POST', '/api/auth/signup');
   }
 }
