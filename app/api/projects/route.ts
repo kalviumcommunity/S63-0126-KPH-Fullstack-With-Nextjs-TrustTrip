@@ -6,6 +6,7 @@ import {
   sendPaginatedSuccess,
 } from "@/lib/responseHandler";
 import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
+import { handleAsyncError } from "@/lib/errorHandler";
 
 /**
  * GET /api/projects
@@ -90,14 +91,7 @@ export async function GET(request: NextRequest) {
       "Projects fetched successfully"
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error fetching projects:", error);
-    return sendError(
-      "Failed to fetch projects",
-      ERROR_CODES.PROJECT_NOT_FOUND,
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      error
-    );
+    return handleAsyncError(error, "GET", "/api/projects");
   }
 }
 
@@ -189,24 +183,8 @@ export async function POST(request: NextRequest) {
       HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error creating project:", error);
-
-    // Check for specific Prisma errors
-    if (error instanceof Error && error.message.includes("Unique constraint")) {
-      return sendError(
-        "A project with this configuration already exists",
-        ERROR_CODES.UNIQUE_CONSTRAINT_VIOLATION,
-        HTTP_STATUS_CODES.CONFLICT,
-        error.message
-      );
-    }
-
-    return sendError(
-      "Failed to create project",
-      ERROR_CODES.PROJECT_CREATION_FAILED,
-      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
-      error
-    );
+    return handleAsyncError(error, "POST", "/api/projects", {
+      operation: "project_creation",
+    });
   }
 }
