@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       })
       .catch((error) => {
         logger.error(
-          `Welcome email error for ${user.email}: ${error}`, 
+          `Welcome email error for ${user.email}: ${error}`,
           error as Error,
           {
             correlationId: logger.generateCorrelationId(),
@@ -119,6 +119,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    return handleAsyncError(error, 'POST', '/api/auth/signup');
+    return handleAsyncError(error, "POST", "/api/auth/signup");
   }
 }

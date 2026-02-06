@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
       responseTime,
     });
   } catch (error) {
-    return handleAsyncError(error, 'GET', '/api/bookings');
+    return handleAsyncError(error, "GET", "/api/bookings");
   }
 }
 
@@ -271,6 +271,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    return handleAsyncError(error, 'POST', '/api/bookings');
+    return handleAsyncError(error, "POST", "/api/bookings");
   }
 }

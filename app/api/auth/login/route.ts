@@ -79,6 +79,6 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    return handleAsyncError(error, 'POST', '/api/auth/login');
+    return handleAsyncError(error, "POST", "/api/auth/login");
   }
 }

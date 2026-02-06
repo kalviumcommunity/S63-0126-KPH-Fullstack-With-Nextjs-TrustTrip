@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
     if (typeof fileSize !== "number" || fileSize <= 0) {
       return sendError(
         "Invalid file size",
-        HTTP_STATUS_CODES.BAD_REQUEST,
-        ERROR_CODES.VALIDATION_ERROR
+        ERROR_CODES.VALIDATION_ERROR,
+        HTTP_STATUS_CODES.BAD_REQUEST
       );
     }
 
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
       HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
-    return handleAsyncError(error, 'POST', '/api/files', {
-      operation: 'file_metadata_storage'
+    return handleAsyncError(error, "POST", "/api/files", {
+      operation: "file_metadata_storage",
     });
   }
 }
@@ -217,7 +217,7 @@ export async function GET(req: NextRequest) {
       "Files retrieved successfully"
     );
   } catch (error) {
-    return handleAsyncError(error, 'GET', '/api/files');
+    return handleAsyncError(error, "GET", "/api/files");
   }
 }
 
@@ -272,8 +272,8 @@ export async function DELETE(req: NextRequest) {
       HTTP_STATUS_CODES.OK
     );
   } catch (error) {
-    return handleAsyncError(error, 'DELETE', '/api/files', {
-      operation: 'file_deletion'
+    return handleAsyncError(error, "DELETE", "/api/files", {
+      operation: "file_deletion",
     });
   }
 }
