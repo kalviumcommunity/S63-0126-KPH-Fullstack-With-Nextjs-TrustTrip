@@ -1,42 +1,272 @@
+/**
+ * Tailwind CSS v4 Theme Configuration
+ * 
+ * This file defines custom design tokens, breakpoints, and theme colors
+ * for the TrustTrip application. Tailwind v4 uses CSS-based configuration
+ * through the @theme directive.
+ */
+
+/* ==========================================================================
+   CSS Variables & Design Tokens
+   ========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Colors */
+  --color-brand-light: #93C5FD;
+  --color-brand-default: #3B82F6;
+  --color-brand-dark: #1E40AF;
+  
+  /* Light Theme Colors */
+  --background-light: #ffffff;
+  --foreground-light: #171717;
+  --color-gray-50-light: #f9fafb;
+  --color-gray-100-light: #f3f4f6;
+  --color-gray-200-light: #e5e7eb;
+  --color-gray-300-light: #d1d5db;
+  --color-gray-600-light: #4b5563;
+  --color-gray-700-light: #374151;
+  --color-gray-800-light: #1f2937;
+  --color-gray-900-light: #111827;
+  
+  /* Dark Theme Colors */
+  --background-dark: #0a0a0a;
+  --foreground-dark: #ededed;
+  --color-gray-50-dark: #1f2937;
+  --color-gray-100-dark: #374151;
+  --color-gray-200-dark: #4b5563;
+  --color-gray-300-dark: #6b7280;
+  --color-gray-600-dark: #9ca3af;
+  --color-gray-700-dark: #d1d5db;
+  --color-gray-800-dark: #e5e7eb;
+  --color-gray-900-dark: #f3f4f6;
+
+  /* Semantic Colors */
+  --color-success-light: #10b981;
+  --color-success-dark: #34d399;
+  --color-warning-light: #f59e0b;
+  --color-warning-dark: #fbbf24;
+  --color-error-light: #ef4444;
+  --color-error-dark: #f87171;
 }
 
-@media (prefers-color-scheme: dark) {
+/* ==========================================================================
+   Tailwind v4 Theme Configuration
+   ========================================================================== */
+
+@theme {
+  /* Brand Colors Configuration */
+  --color-brand: var(--color-brand-default);
+  --color-brand-light: var(--color-brand-light);
+  --color-brand-dark: var(--color-brand-dark);
+  
+  /* Extended Colors for Light/Dark Mode */
+  --color-surface-light: var(--background-light);
+  --color-surface-dark: var(--background-dark);
+  --color-text-light: var(--foreground-light);
+  --color-text-dark: var(--foreground-dark);
+  
+  /* Success, Warning, Error Colors */
+  --color-success: var(--color-success-light);
+  --color-warning: var(--color-warning-light);
+  --color-error: var(--color-error-light);
+
+  /* Typography */
+  --font-sans: "Geist Sans", Arial, Helvetica, sans-serif;
+  --font-mono: "Geist Mono", monospace;
+  
+  /* Spacing Scale */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+  
+  /* Border Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* ==========================================================================
+   Custom Breakpoints
+   ========================================================================== */
+
+/* 
+ * Custom responsive breakpoints matching the assignment requirements:
+ * - sm: 640px (mobile landscape)
+ * - md: 768px (tablet)
+ * - lg: 1024px (desktop)
+ * - xl: 1280px (large desktop)
+ * 
+ * Note: Tailwind v4 uses built-in breakpoints by default.
+ * These are documented here for reference and can be customized if needed.
+ */
+
+@media (min-width: 640px) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --breakpoint-sm: 640px;
   }
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
+@media (min-width: 768px) {
+  :root {
+    --breakpoint-md: 768px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --breakpoint-lg: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --breakpoint-xl: 1280px;
+  }
+}
+
+/* ==========================================================================
+   Base Styles
+   ========================================================================== */
+
+html {
+  scroll-behavior: smooth;
+  /* Enable dark mode class strategy */
+  color-scheme: light dark;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+/* ==========================================================================
+   Light/Dark Mode Base Styles
+   ========================================================================== */
+
+/* Light Theme (Default) */
+:root,
+.light {
+  --background: var(--background-light);
+  --foreground: var(--foreground-light);
+  --color-gray-50: var(--color-gray-50-light);
+  --color-gray-100: var(--color-gray-100-light);
+  --color-gray-200: var(--color-gray-200-light);
+  --color-gray-300: var(--color-gray-300-light);
+  --color-gray-600: var(--color-gray-600-light);
+  --color-gray-700: var(--color-gray-700-light);
+  --color-gray-800: var(--color-gray-800-light);
+  --color-gray-900: var(--color-gray-900-light);
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Dark Theme */
+.dark {
+  --background: var(--background-dark);
+  --foreground: var(--foreground-dark);
+  --color-gray-50: var(--color-gray-50-dark);
+  --color-gray-100: var(--color-gray-100-dark);
+  --color-gray-200: var(--color-gray-200-dark);
+  --color-gray-300: var(--color-gray-300-dark);
+  --color-gray-600: var(--color-gray-600-dark);
+  --color-gray-700: var(--color-gray-700-dark);
+  --color-gray-800: var(--color-gray-800-dark);
+  --color-gray-900: var(--color-gray-900-dark);
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+/* Background & Text Colors */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* ==========================================================================
+   Responsive Utility Classes
+   ========================================================================== */
+
+/* Responsive Padding Utilities */
+.p-responsive {
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .p-responsive {
+    padding: 2rem;
   }
 }
+
+@media (min-width: 1024px) {
+  .p-responsive {
+    padding: 3rem;
+  }
+}
+
+/* Responsive Text Utilities */
+.text-responsive {
+  font-size: 1.125rem;
+  line-height: 1.75;
+}
+
+@media (min-width: 768px) {
+  .text-responsive {
+    font-size: 1.5rem;
+    line-height: 2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .text-responsive {
+    font-size: 1.875rem;
+    line-height: 2.25;
+  }
+}
+
+/* ==========================================================================
+   Component Styles
+   ========================================================================== */
+
+/* Card Component */
+.card {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.card:hover {
+  @apply shadow-xl transform -translate-y-1;
+}
+
+/* Button Variants */
+.btn {
+  @apply px-6 py-3 font-semibold rounded-lg transition-all duration-200;
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-primary {
+  @apply bg-brand text-white hover:bg-brand-dark;
+  @apply focus:ring-brand;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200;
+  @apply hover:bg-gray-300 dark:hover:bg-gray-600;
+}
+
+/* ==========================================================================
+   Tailwind Imports
+   ========================================================================== */
+
+@import "tailwindcss";
+
