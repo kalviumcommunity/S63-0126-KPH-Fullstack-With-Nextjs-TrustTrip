@@ -3331,3 +3331,692 @@ curl -X POST http://localhost:3000/api/files \
 | **Signed URLs** | Cryptographic authenticity | AWS signature algorithm |
 
 ---
+
+## 🔄 State Management with React Context API & Hooks
+
+### Overview
+
+TrustTrip implements a centralized state management system using **React Context API** and **React Hooks** to manage authentication state across the entire application. This approach provides:
+
+✅ **Global State Access**: Authentication data available throughout the component tree  
+✅ **No Prop Drilling**: Avoid passing props through multiple component layers  
+✅ **Type Safety**: Full TypeScript support with defined interfaces  
+✅ **Performance**: Minimal re-renders with optimized context design  
+✅ **Developer Experience**: Clean custom hooks for consuming auth state  
+
+### Why Context + Hooks?
+
+#### ✅ Advantages
+
+**1. Native React Solution**
+- No external dependencies (Redux, Zustand, etc.)
+- Works seamlessly with React's reconciliation
+- Built-in to React, no additional bundle size
+
+**2. Simplicity**
+- Easy to understand and implement
+- Less boilerplate compared to Redux
+- Perfect for authentication use cases
+
+**3. Type Safety**
+- Full TypeScript support out of the box
+- Auto-complete for state and actions
+- Compile-time error checking
+
+**4. Server-Side Rendering (SSR) Compatible**
+- Works with Next.js App Router
+- Client-side rendering when needed (`"use client"`)
+- Hydrates state from localStorage on mount
+
+**5. Testability**
+- Easy to mock providers in tests
+- Isolated state for each test
+- No global state pollution
+
+#### ⚠️ When NOT to Use Context
+
+Context API is **not ideal** for:
+
+**1. High-Frequency Updates**
+- Rapidly changing data (e.g., mouse position, scroll events)
+- Every context update re-renders all consumers
+- **Solution**: Use `useState` in parent component or Zustand for fine-grained updates
+
+**2. Complex State Logic**
+- Large applications with intricate state dependencies
+- Normalized data structures (entities, relationships)
+- **Solution**: Consider Redux Toolkit or Zustand with middleware
+
+**3. Performance-Critical Rendering**
+- Large lists with item-level state updates
+- Real-time dashboards with many data points
+- **Solution**: Use React Query for server state, local state for UI
+
+**4. Deeply Nested Component Trees**
+- Context changes cause all consumers to re-render
+- **Solution**: Split contexts by domain, memoize child components
+
+### Architecture & Design
+
+#### State Management Flow
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                      Root Layout                         │
+│                                                          │
+│  ┌────────────────────────────────────────────────┐     │
+│  │          AuthProvider (Context Provider)        │     │
+│  │                                                 │     │
+│  │  State:                                         │     │
+│  │  - user: User | null                            │     │
+│  │  - token: string | null                         │     │
+│  │  - isAuthenticated: boolean                     │     │
+│  │  - isLoading: boolean                           │     │
+│  │                                                 │     │
+│  │  Actions:                                       │     │
+│  │  - login(email, password)                       │     │
+│  │  - signup(name, email, password)                │     │
+│  │  - logout()                                     │     │
+│  │  - updateUser(userData)                         │     │
+│  │  - refreshAuth()                                │     │
+│  │                                                 │     │
+│  │  ┌─────────────────────────────────────────┐   │     │
+│  │  │         Page Components                  │   │     │
+│  │  │                                          │   │     │
+│  │  │  useAuth() hook consumes context        │   │     │
+│  │  │                                          │   │     │
+│  │  │  const { user, login, logout } = use Auth();│   │
+│  │  │                                          │   │     │
+│  │  │  - Access authentication state          │   │     │
+│  │  │  - Call authentication actions           │   │     │
+│  │  │  - Automatically re-render on state change│  │     │
+│  │  │                                          │   │     │
+│  │  └─────────────────────────────────────────┘   │     │
+│  │                                                 │     │
+│  │  Persistence:                                   │     │
+│  │  - localStorage: authToken, authUser           │     │
+│  │  - Automatic rehydration on mount              │     │
+│  │                                                 │     │
+│  └────────────────────────────────────────────────┘     │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Implementation Files
+
+#### 1. **[context/AuthContext.tsx](context/AuthContext.tsx)** - Authentication Context
+
+**Key Features:**
+- `AuthContext` - React Context for authentication state
+- `AuthProvider` - Provider component that wraps the app
+- `useAuth()` - Custom hook for consuming auth context
+- `useRequireAuth()` - Helper hook for protected routes
+- `useAuthToken()` - Utility hook for API requests
+
+**State Interface:**
+```typescript
+interface AuthState {
+  user: User | null;           // Current authenticated user
+  token: string | null;         // JWT authentication token
+  isAuthenticated: boolean;     // Authentication status
+  isLoading: boolean;           // Initial loading state
+}
+
+interface AuthContextType extends AuthState {
+  login: (email: string, password: string) => Promise<void>;
+  signup: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
+  updateUser: (userData: Partial<User>) => void;
+  refreshAuth: () => Promise<void>;
+}
+```
+
+**Provider Implementation:**
+```typescript
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [authState, setAuthState] = useState<AuthState>({
+    user: null,
+    token: null,
+    isAuthenticated: false,
+    isLoading: true,
+  });
+
+  // Initialize from localStorage on mount
+  useEffect(() => {
+    const storedToken = localStorage.getItem("authToken");
+    const storedUser = localStorage.getItem("authUser");
+    
+    if (storedToken && storedUser) {
+      setAuthState({
+        user: JSON.parse(storedUser),
+        token: storedToken,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } else {
+      setAuthState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, []);
+
+  // Authentication actions
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    
+    const { token, user } = await response.json();
+    
+    localStorage.setItem("authToken", token);
+    localStorage.setItem("authUser", JSON.stringify(user));
+    
+    setAuthState({
+      user,
+      token,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ ...authState, login, signup, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+```
+
+#### 2. **[app/layout.tsx](app/layout.tsx)** - Provider Integration
+
+The `AuthProvider` wraps the entire application in the root layout:
+
+```typescript
+import { AuthProvider } from "@/context/AuthContext";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+**Why in Layout?**
+- ✅ Makes auth context available to all pages
+- ✅ Runs once on app initialization
+- ✅ Survives client-side navigation
+- ✅ Compatible with Next.js App Router
+
+#### 3. **[components/AuthDemo.tsx](components/AuthDemo.tsx)** - Usage Example
+
+A fully functional authentication UI demonstrating context usage:
+
+```typescript
+"use client";
+
+import { useAuth } from "@/context/AuthContext";
+
+export default function AuthDemo() {
+  const { user, isAuthenticated, login, logout } = useAuth();
+  
+  if (isAuthenticated && user) {
+    return (
+      <div>
+        <h2>Welcome, {user.name}!</h2>
+        <p>Email: {user.email}</p>
+        <button onClick={logout}>Logout</button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      login(email, password);
+    }}>
+      {/* Login form */}
+    </form>
+  );
+}
+```
+
+### Custom Hooks API
+
+#### useAuth() - Main Authentication Hook
+
+**Usage:**
+```typescript
+const { user, isAuthenticated, isLoading, login, logout } = useAuth();
+```
+
+**Returns:**
+- `user` - Current user object or `null`
+- `token` - JWT token or `null`
+- `isAuthenticated` - `true` if user is logged in
+- `isLoading` - `true` during initialization
+- `login(email, password)` - Authenticate user
+- `signup(name, email, password)` - Register new user
+- `logout()` - Clear authentication
+- `updateUser(userData)` - Update user information
+- `refreshAuth()` - Re-validate authentication
+
+**Error Handling:**
+```typescript
+try {
+  await login(email, password);
+} catch (error) {
+  console.error("Login failed:", error.message);
+}
+```
+
+#### useRequireAuth() - Protected Route Helper
+
+**Usage:**
+```typescript
+function ProtectedPage() {
+  const user = useRequireAuth("/login");
+  
+  if (!user) return null; // Will redirect to /login
+  
+  return <div>Protected Content for {user.name}</div>;
+}
+```
+
+**How It Works:**
+- Checks if user is authenticated
+- Redirects to login if not authenticated
+- Returns `null` during loading state
+
+#### useAuthToken() - API Request Helper
+
+**Usage:**
+```typescript
+function Dashboard() {
+  const token = useAuthToken();
+  
+  useEffect(() => {
+    fetch("/api/dashboard", {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+  }, [token]);
+}
+```
+
+### Persistent Authentication
+
+#### localStorage Strategy
+
+**Stored Data:**
+- `authToken` - JWT authentication token
+- `authUser` - Serialized user object
+
+**Initialization Flow:**
+```
+App Loads
+    ↓
+AuthProvider Mounts
+    ↓
+Check localStorage for authToken + authUser
+    ├─→ Found? → Restore auth state
+    └─→ Not found? → Set isLoading=false
+```
+
+**Benefits:**
+- ✅ Authentication survives page refreshes
+- ✅ User stays logged in across browser sessions
+- ✅ No backend call needed on reload
+
+**Security Considerations:**
+- ⚠️ localStorage is vulnerable to XSS attacks
+- ✅ Use httpOnly cookies for production (more secure)
+- ✅ Implement token refresh mechanism
+- ✅ Clear localStorage on logout
+
+### State Update Flow
+
+#### Login Flow
+
+```
+User submits login form
+    ↓
+Component calls login(email, password)
+    ↓
+AuthProvider sends POST /api/auth/login
+    ↓
+Backend validates credentials, returns token + user
+    ↓
+AuthProvider:
+    - Stores token + user in localStorage
+    - Updates React state (user, token, isAuthenticated)
+    ↓
+All components using useAuth() re-render
+    ↓
+User sees authenticated UI
+```
+
+#### Logout Flow
+
+```
+User clicks logout button
+    ↓
+Component calls logout()
+    ↓
+AuthProvider:
+    - Removes token + user from localStorage
+    - Resets state to null values
+    ↓
+All components using useAuth() re-render
+    ↓
+User sees login UI
+```
+
+### Performance Optimizations
+
+#### 1. useCallback for Actions
+
+```typescript
+const login = useCallback(async (email, password) => {
+  // Login logic
+}, []); // No dependencies, function never recreates
+```
+
+**Benefit:** Prevents unnecessary re-renders of child components using `login`
+
+#### 2. Selective State Updates
+
+```typescript
+const updateUser = useCallback((userData: Partial<User>) => {
+  setAuthState((prev) => ({
+    ...prev,
+    user: { ...prev.user, ...userData },
+  }));
+}, []);
+```
+
+**Benefit:** Only updates `user` property, doesn't recreate entire state object
+
+#### 3. Loading State
+
+```typescript
+if (isLoading) {
+  return <div>Loading authentication...</div>;
+}
+```
+
+**Benefit:** Prevents flickering by waiting for localStorage check
+
+#### 4. Memoization (if needed)
+
+```typescript
+const UserProfile = React.memo(function UserProfile({ user }) {
+  return <div>{user.name}</div>;
+});
+```
+
+**Benefit:** Component only re-renders if `user` changes
+
+### Example Usage Patterns
+
+#### Pattern 1: Conditional Rendering
+
+```typescript
+function Header() {
+  const { isAuthenticated, user, logout } = useAuth();
+  
+  return (
+    <nav>
+      {isAuthenticated ? (
+        <>
+          <span>Hello, {user?.name}</span>
+          <button onClick={logout}>Logout</button>
+        </>
+      ) : (
+        <Link href="/login">Login</Link>
+      )}
+    </nav>
+  );
+}
+```
+
+#### Pattern 2: Protected API Calls
+
+```typescript
+function Dashboard() {
+  const { token } = useAuth();
+  const [data, setData] = useState(null);
+  
+  useEffect(() => {
+    if (token) {
+      fetch("/api/dashboard", {
+        headers: { "Authorization": `Bearer ${token}` },
+      })
+        .then(res => res.json())
+        .then(setData);
+    }
+  }, [token]);
+  
+  return <div>{JSON.stringify(data)}</div>;
+}
+```
+
+#### Pattern 3: Role-Based Access
+
+```typescript
+function AdminPanel() {
+  const { user } = useAuth();
+  
+  if (user?.role !== "admin") {
+    return <div>Access Denied</div>;
+  }
+  
+  return <div>Admin Dashboard</div>;
+}
+```
+
+### Testing Strategies
+
+#### Unit Testing Context
+
+```typescript
+import { render, screen } from "@testing-library/react";
+import { AuthProvider } from "@/context/AuthContext";
+
+function TestComponent() {
+  const { user } = useAuth();
+  return <div>{user?.name || "Not logged in"}</div>;
+}
+
+test("shows not logged in initially", () => {
+  render(
+    <AuthProvider>
+      <TestComponent />
+    </AuthProvider>
+  );
+  
+  expect(screen.getByText("Not logged in")).toBeInTheDocument();
+});
+```
+
+#### Mocking Auth Context
+
+```typescript
+const mockAuthContext = {
+  user: { id: "1", name: "Test User", email: "test@test.com" },
+  isAuthenticated: true,
+  login: jest.fn(),
+  logout: jest.fn(),
+};
+
+jest.mock("@/context/AuthContext", () => ({
+  useAuth: () => mockAuthContext,
+}));
+```
+
+### Best Practices Summary
+
+#### ✅ DO
+
+- **Split contexts by domain** (auth, theme, cart)
+- **Use `useCallback` and `useMemo`** for expensive operations
+- **Implement error boundaries** around providers
+- **Type everything** with TypeScript
+- **Validate state consistency** before updates
+- **Clear sensitive data on logout** (tokens, user info)
+- **Handle loading and error states** gracefully
+
+#### ❌ DON'T
+
+- **Store large objects** in context (use React Query for server state)
+- **Update context on every keystroke** (use local state instead)
+- **Nest multiple providers** unnecessarily
+- **Access context outside provider** (will throw error)
+- **Store derived state** (compute from existing state)
+- **Ignore TypeScript errors** ("any" defeats the purpose)
+
+### Comparison: Context API vs Alternatives
+
+| Feature | Context API | Redux Toolkit | Zustand |
+|---------|-------------|---------------|---------|
+| **Bundle Size** | 0KB (built-in) | ~10KB | ~1KB |
+| **Boilerplate** | Low | Medium | Very Low |
+| **DevTools** | React DevTools | Redux DevTools | Zustand DevTools |
+| **Learning Curve** | Easy | Medium | Easy |
+| **TypeScript** | Excellent | Excellent | Good |
+| **Performance** | Good | Excellent | Excellent |
+| **Middleware** | Manual | Built-in | Built-in |
+| **Use Case** | Auth, theme, small state | Large apps, complex logic | Medium apps, simple state |
+
+### Migration Path to Advanced State Management
+
+If your app grows and Context API becomes insufficient:
+
+**Step 1: Identify Bottlenecks**
+- Profile components with React DevTools Profiler
+- Look for excessive re-renders
+- Identify frequently changing state
+
+**Step 2: Extract High-Frequency State**
+```typescript
+// Before: In Context (causes many re-renders)
+const [searchQuery, setSearchQuery] = useState("");
+
+// After: Local component state
+function SearchBar() {
+  const [query, setQuery] = useState("");
+  // Only this component re-renders on keystroke
+}
+```
+
+**Step 3: Consider React Query for Server State**
+```typescript
+import { useQuery } from "@tanstack/react-query";
+
+function Users() {
+  const { data } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => fetch("/api/users").then(res => res.json()),
+  });
+}
+```
+
+**Step 4: Migrate to Zustand (if needed)**
+```typescript
+import create from "zustand";
+
+export const useAuthStore = create((set) => ({
+  user: null,
+  login: async (email, password) => {
+    const user = await apiLogin(email, password);
+    set({ user });
+  },
+}));
+```
+
+### Troubleshooting Common Issues
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "useAuth must be used within AuthProvider" | Hook called outside provider | Ensure `<AuthProvider>` wraps component tree |
+| Context updates but component doesn't re-render | Not subscribed to changing value | Check if component reads correct context value |
+| Infinite re-render loop | State update in render phase | Move state updates to `useEffect` or event handlers |
+| localStorage not persisting | Browser privacy mode | Use sessionStorage or server-side sessions |
+| Stale closure in useEffect | Missing dependencies | Add all used values to dependency array |
+
+### Future Enhancements
+
+1. **Token Refresh Logic**
+   ```typescript
+   const refreshToken = useCallback(async () => {
+     const newToken = await fetch("/api/auth/refresh");
+     localStorage.setItem("authToken", newToken);
+     setAuthState(prev => ({ ...prev, token: newToken }));
+   }, []);
+   ```
+
+2. **Multiple Auth Providers**
+   ```typescript
+   <AuthProvider>
+     <ThemeProvider>
+       <CartProvider>
+         {children}
+       </CartProvider>
+     </ThemeProvider>
+   </AuthProvider>
+   ```
+
+3. **Optimistic Updates**
+   ```typescript
+   const updateUser = useCallback(async (userData) => {
+     // Update UI immediately
+     setAuthState(prev => ({
+       ...prev,
+       user: { ...prev.user, ...userData },
+     }));
+     
+     try {
+       await fetch("/api/users", {
+         method: "PATCH",
+         body: JSON.stringify(userData),
+       });
+     } catch (error) {
+       // Rollback on failure
+       setAuthState(prev => ({ ...prev, user: originalUser }));
+     }
+   }, []);
+   ```
+
+4. **Session Timeout Handling**
+   ```typescript
+   useEffect(() => {
+     const timeout = setTimeout(() => {
+       logout();
+       alert("Session expired. Please login again.");
+     }, 30 * 60 * 1000); // 30 minutes
+     
+     return () => clearTimeout(timeout);
+   }, [logout]);
+   ```
+
+### Summary Table
+
+| Feature | Implementation | Benefit |
+|---------|----------------|---------|
+| **AuthContext** | React.createContext | Global auth state |
+| **AuthProvider** | Context.Provider wrapper | Provides state to all children |
+| **useAuth Hook** | Custom hook with useContext | Clean API for consuming auth |
+| **localStorage Persistence** | Auto-save on login | Survives page refreshes |
+| **TypeScript Types** | Interfaces for state/actions | Type safety & autocomplete |
+| **useCallback** | Memoize actions | Prevent unnecessary re-renders |
+| **Error Boundaries** | Wrap provider | Graceful error handling |
+| **Loading State** | isLoading flag | Smooth UX during initialization |
+
+---
+
