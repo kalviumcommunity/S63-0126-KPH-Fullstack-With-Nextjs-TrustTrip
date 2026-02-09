@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { generateToken } from "@/lib/auth";
+import { getDefaultRole } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/auth/login - Authenticate user and return JWT token
@@ -53,12 +54,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate JWT token with user ID and email
+    // Get user role (default to 'viewer' if not set)
+    const userRole = user.role || getDefaultRole();
+
+    // Generate JWT token with user ID, email, and role for RBAC
     const token = generateToken({
       userId: user.id,
       email: user.email,
       name: user.name,
+      role: userRole,
     });
+
+    // Log successful login with role info
+    console.log(`[AUTH] User ${email} logged in with role: ${userRole}`);
 
     // Return success response with token
     return NextResponse.json(
@@ -71,6 +79,7 @@ export async function POST(request: NextRequest) {
             email: user.email,
             name: user.name,
             verified: user.verified,
+            role: userRole,
           },
         },
         message: "Login successful",

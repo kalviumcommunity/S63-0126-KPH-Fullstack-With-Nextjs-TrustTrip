@@ -7,6 +7,13 @@ import {
 } from "@/lib/responseHandler";
 import { ERROR_CODES, HTTP_STATUS_CODES } from "@/lib/errorCodes";
 import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
+import {
+  hasPermission,
+  enforceAccessControl,
+  evaluateAccess,
+  logAccessAttempt,
+  PERMISSIONS,
+} from "@/lib/rbac";
 
 /**
  * Generate a unique cache key based on query parameters
@@ -41,7 +48,7 @@ async function invalidateUsersCache(): Promise<void> {
 /**
  * GET /api/users
  * List all users with pagination and filtering
- * Protected Route: Requires valid JWT token with any role
+ * Protected Route: Requires valid JWT token with appropriate role
  *
  * Query Parameters:
  * - page: number (default: 1)
@@ -52,9 +59,36 @@ async function invalidateUsersCache(): Promise<void> {
  * - sortOrder: "asc" | "desc" (default: desc)
  *
  * Authorization: Bearer <JWT_TOKEN>
+ *
+ * RBAC:
+ * - Admin: Full access to all operations
+ * - Editor: Can read all users
+ * - Viewer: Can read all users (limited view)
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
+
+  // Get user role from request headers (set by middleware)
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "read",
+    "/api/users",
+    hasPermission(userRole, PERMISSIONS.READ)
+  );
+
+  // Check permission - only users with 'read' permission can list users
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.READ,
+    "list_users",
+    "/api/users"
+  );
+  if (accessDenied) return accessDenied;
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -89,8 +123,8 @@ export async function GET(request: NextRequest) {
     if (cached) {
       const cachedData = JSON.parse(cached);
       const responseTime = Date.now() - startTime;
-      // eslint-disable-next-line no-console
       console.log(`[CACHE HIT] Users list - Response time: ${responseTime}ms`);
+      console.log(`[RBAC] ${userRole} fetched users list (cached): ALLOWED`);
       return sendPaginatedSuccess(
         cachedData.users,
         cachedData.pagination,
@@ -99,7 +133,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Cache miss - fetch from database
-    // eslint-disable-next-line no-console
     console.log(`[CACHE MISS] Users list - Fetching from database`);
 
     // Build where clause
@@ -120,6 +153,7 @@ export async function GET(request: NextRequest) {
     const total = await prisma.user.count({ where });
 
     // Fetch users (exclude passwords from response)
+    // Different roles see different amounts of data
     const users = await prisma.user.findMany({
       where,
       skip,
@@ -159,8 +193,11 @@ export async function GET(request: NextRequest) {
     );
 
     const responseTime = Date.now() - startTime;
-    // eslint-disable-next-line no-console
     console.log(`[CACHE MISS] Users list - Response time: ${responseTime}ms`);
+
+    console.log(
+      `[RBAC] ${userRole} fetched users list (${users.length} users): ALLOWED`
+    );
 
     return sendPaginatedSuccess(
       users,
@@ -168,7 +205,11 @@ export async function GET(request: NextRequest) {
       "Users fetched successfully"
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
+    // Log failed access
+    console.error(
+      `[RBAC] ${userRole} failed to fetch users list: DENIED`,
+      error
+    );
     console.error("Error fetching users:", error);
     return sendError(
       "Failed to fetch users",
@@ -182,7 +223,7 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/users
  * Create a new user
- * Note: In production, use /api/auth/signup for user registration
+ * Protected Route: Requires 'create' permission (Admin/Editor only)
  *
  * Request Body:
  * {
@@ -196,8 +237,34 @@ export async function GET(request: NextRequest) {
  * }
  *
  * Authorization: Bearer <JWT_TOKEN> (admin role recommended)
+ *
+ * RBAC:
+ * - Admin: Can create users with any role
+ * - Editor: Can create users with default role only
+ * - Viewer: Cannot create users (DENIED)
  */
 export async function POST(request: NextRequest) {
+  // Get user role from request headers (set by middleware)
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "create",
+    "/api/users",
+    hasPermission(userRole, PERMISSIONS.CREATE)
+  );
+
+  // Check permission - only users with 'create' permission can create users
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.CREATE,
+    "create_user",
+    "/api/users"
+  );
+  if (accessDenied) return accessDenied;
+
   try {
     const body = await request.json();
     const { email, name, password, bio, phone, profileImage, role } = body;
@@ -230,6 +297,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Role-based restrictions:
+    // - Admin can assign any role
+    // - Editor can only assign 'viewer' role
+    let assignedRole = role || "viewer";
+    if (userRole === "editor" && role && role !== "viewer") {
+      console.warn(
+        `[RBAC] Editor ${userId} tried to assign '${role}' role - forcing 'viewer'`
+      );
+      assignedRole = "viewer";
+    }
+
+    // Only admin can assign 'admin' role
+    if (role === "admin" && userRole !== "admin") {
+      console.warn(
+        `[RBAC] ${userRole} ${userId} tried to create admin user - DENIED`
+      );
+      return sendError(
+        "Only administrators can create admin users",
+        ERROR_CODES.FORBIDDEN,
+        HTTP_STATUS_CODES.FORBIDDEN
+      );
+    }
+
     // Create the user
     // ⚠️ WARNING: In production, always hash passwords with bcrypt or similar!
     const user = await prisma.user.create({
@@ -240,14 +330,17 @@ export async function POST(request: NextRequest) {
         bio,
         phone,
         profileImage,
-        role: role || "user",
+        role: assignedRole,
       },
     });
 
     // Invalidate cache after user creation
     await invalidateUsersCache();
-    // eslint-disable-next-line no-console
     console.log("[CACHE INVALIDATED] Users list cache cleared");
+
+    console.log(
+      `[RBAC] ${userRole} created user ${user.id} (${user.email}) with role '${assignedRole}': ALLOWED`
+    );
 
     return sendSuccess(
       {
@@ -262,7 +355,9 @@ export async function POST(request: NextRequest) {
       HTTP_STATUS_CODES.CREATED
     );
   } catch (error) {
-    // eslint-disable-next-line no-console
+    // Log failed access
+    console.error(`[RBAC] ${userRole} failed to create user: DENIED`, error);
+
     console.error("Error creating user:", error);
 
     // Check for specific Prisma errors
@@ -278,6 +373,84 @@ export async function POST(request: NextRequest) {
     return sendError(
       "Failed to create user",
       ERROR_CODES.USER_CREATION_FAILED,
+      HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
+      error
+    );
+  }
+}
+
+/**
+ * DELETE /api/users
+ * Delete users in bulk
+ * Protected Route: Requires 'delete' permission (Admin only)
+ */
+export async function DELETE(request: NextRequest) {
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "delete",
+    "/api/users",
+    hasPermission(userRole, PERMISSIONS.DELETE)
+  );
+
+  // Only admins can delete users
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.DELETE,
+    "delete_users",
+    "/api/users"
+  );
+  if (accessDenied) return accessDenied;
+
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return sendError(
+        "No user IDs provided for deletion",
+        ERROR_CODES.VALIDATION_ERROR,
+        HTTP_STATUS_CODES.BAD_REQUEST
+      );
+    }
+
+    // Prevent self-deletion
+    if (ids.includes(userId)) {
+      return sendError(
+        "You cannot delete your own account",
+        ERROR_CODES.FORBIDDEN,
+        HTTP_STATUS_CODES.FORBIDDEN
+      );
+    }
+
+    // Delete users
+    const deleteResult = await prisma.user.deleteMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+
+    // Invalidate cache
+    await invalidateUsersCache();
+    console.log("[CACHE INVALIDATED] Users list cache cleared");
+
+    console.log(
+      `[RBAC] Admin ${userId} deleted ${deleteResult.count} users: ALLOWED`
+    );
+
+    return sendSuccess(
+      { deletedCount: deleteResult.count },
+      `${deleteResult.count} user(s) deleted successfully`,
+      HTTP_STATUS_CODES.OK
+    );
+  } catch (error) {
+    console.error(`[RBAC] ${userRole} failed to delete users: DENIED`, error);
+    return sendError(
+      "Failed to delete users",
+      ERROR_CODES.INTERNAL_ERROR,
       HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR,
       error
     );
