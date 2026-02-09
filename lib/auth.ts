@@ -11,9 +11,12 @@ export const REFRESH_TOKEN_EXPIRY = "7d";
 
 /**
  * Generate a JWT token for a user
- * @param payload - Object containing user data (userId, email, etc.)
+ * @param payload - Object containing user data (userId, email, role, etc.)
  * @param expiresIn - Token expiry time (default: '1h')
  * @returns JWT token string
+ * 
+ * Note: Include 'role' in payload for RBAC support
+ * Example: generateToken({ userId, email, role: 'admin' })
  */
 export function generateToken(
   payload: Record<string, unknown>,

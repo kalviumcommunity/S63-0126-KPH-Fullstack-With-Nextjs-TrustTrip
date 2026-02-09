@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import { getDefaultRole } from "@/lib/rbac";
 
 // POST /api/auth/signup - Register a new user
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, password, bio, phone, profileImage } = body;
+    const { name, email, password, bio, phone, profileImage, role } = body;
 
     // Validate required fields
     const errors: string[] = [];
@@ -56,7 +57,10 @@ export async function POST(request: NextRequest) {
     // Hash password using bcrypt with salt rounds of 10
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create the user with hashed password
+    // Assign default role (viewer) if not provided
+    const assignedRole = role || getDefaultRole();
+
+    // Create the user with hashed password and role
     const user = await prisma.user.create({
       data: {
         name,
@@ -66,8 +70,12 @@ export async function POST(request: NextRequest) {
         phone,
         profileImage,
         verified: false,
+        role: assignedRole,
       },
     });
+
+    // Log user registration with role
+    console.log(`[AUTH] New user registered: ${email} with role: ${assignedRole}`);
 
     // Return success response (without password)
     return NextResponse.json(
@@ -78,6 +86,7 @@ export async function POST(request: NextRequest) {
           email: user.email,
           name: user.name,
           verified: user.verified,
+          role: user.role,
           createdAt: user.createdAt,
         },
         message: "User registered successfully",
