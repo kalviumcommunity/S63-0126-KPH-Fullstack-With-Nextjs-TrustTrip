@@ -4,8 +4,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendWelcomeEmail } from "@/lib/email";
 import { handleAsyncError } from "@/lib/errorHandler";
 import { logger } from "@/lib/logger";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  setRefreshTokenCookie,
+} from "@/lib/tokenManager";
 
-// POST /api/auth/signup - Register a new user
+/**
+ * POST /api/auth/signup
+ *
+ * Registers a new user and issues tokens:
+ * - Access token (15m): Returned in response body
+ * - Refresh token (7d): Set in HTTP-only cookie
+ *
+ * Process:
+ * 1. Validate input (email, name, password)
+ * 2. Check email uniqueness
+ * 3. Hash password with bcrypt (10 salt rounds)
+ * 4. Create user in database
+ * 5. Generate and return tokens (dual-token system)
+ * 6. Send welcome email asynchronously
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -72,6 +91,32 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Generate tokens
+    const accessToken = generateAccessToken(user.id, user.email, user.role);
+    const refreshToken = generateRefreshToken(user.id, user.email);
+
+    // Create response with access token
+    const response = NextResponse.json(
+      {
+        success: true,
+        data: {
+          accessToken,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            verified: user.verified,
+            createdAt: user.createdAt,
+          },
+        },
+        message: "User registered successfully",
+      },
+      { status: 201 }
+    );
+
+    // Set refresh token in HTTP-only cookie
+    setRefreshTokenCookie(response, refreshToken);
+
     // Send welcome email (non-blocking)
     // Note: We don't await this to avoid blocking the response
     // Email failures won't affect user registration success
@@ -103,21 +148,7 @@ export async function POST(request: NextRequest) {
         );
       });
 
-    // Return success response (without password)
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          verified: user.verified,
-          createdAt: user.createdAt,
-        },
-        message: "User registered successfully",
-      },
-      { status: 201 }
-    );
+    return response;
   } catch (error) {
     return handleAsyncError(error, "POST", "/api/auth/signup");
   }
