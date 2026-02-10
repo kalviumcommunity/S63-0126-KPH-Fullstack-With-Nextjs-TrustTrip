@@ -11,7 +11,7 @@ export const ACCESS_TOKEN_EXPIRY = "15m";
 export const REFRESH_TOKEN_EXPIRY = "7d";
 
 /**
- * Generate an access token (short-lived)
+
  */
 export function generateAccessToken(payload: JwtPayload | string): string {
   const options: SignOptions = { expiresIn: ACCESS_TOKEN_EXPIRY };

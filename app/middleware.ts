@@ -7,6 +7,12 @@ import {
   getRequiredRoles,
   hasRequiredRole,
 } from "@/middleware.config";
+import {
+  hasPermission,
+  getRolePermissions,
+  evaluateAccess,
+  PERMISSIONS,
+} from "@/lib/rbac";
 
 const JWT_SECRET =
   process.env.JWT_SECRET || "your-secret-key-change-in-production";
@@ -25,7 +31,7 @@ interface JWTPayload {
 /**
  * Frontend routes that require authentication (cookie-based)
  */
-const FRONTEND_PROTECTED_ROUTES = ["/dashboard", "/users"];
+const FRONTEND_PROTECTED_ROUTES = ["/dashboard", "/users", "/rbac-demo"];
 
 /**
  * Check if the request is for a frontend protected route
@@ -76,6 +82,10 @@ function buildForbiddenResponse(message: string) {
         details: "Insufficient permissions to access this resource",
       },
       timestamp: new Date().toISOString(),
+      rbac: {
+        status: "DENIED",
+        reason: message,
+      },
     },
     { status: 403 }
   );
@@ -93,15 +103,38 @@ function verifyToken(token: string): JWTPayload | null {
 }
 
 /**
- * Authorization Middleware
+ * Log RBAC access attempt with detailed information
+ */
+function logRBACAccess(
+  email: string,
+  role: string,
+  pathname: string,
+  action: string,
+  allowed: boolean
+): void {
+  const status = allowed ? "ALLOWED" : "DENIED";
+  const permissions = getRolePermissions(role);
+  
+  console.log(
+    `[RBAC Middleware] ${role.toUpperCase()} ${email} | Action: ${action} | Path: ${pathname} | Status: ${status} | Permissions: [${permissions.join(", ")}]`
+  );
+}
+
+/**
+ * Authorization Middleware with RBAC Support
  *
  * This middleware intercepts all requests and:
  * 1. Allows public routes without checking authentication
  * 2. For API routes: Checks Authorization header for JWT token
- * 3. For frontend routes (/dashboard, /users): Checks cookies for token
+ * 3. For frontend routes (/dashboard, /users, /rbac-demo): Checks cookies for token
  * 4. Validates JWT signature and expiration
- * 5. Enforces role-based access control (RBAC)
+ * 5. Enforces role-based access control (RBAC) with audit logging
  * 6. Redirects unauthorized frontend users to login page
+ *
+ * RBAC Features:
+ * - Role-permission mapping validation
+ * - Detailed access logging for auditing
+ * - Permission-based route protection
  *
  * Flow:
  * Public Route? → Allow
@@ -121,22 +154,29 @@ export function middleware(req: NextRequest) {
     const token = getTokenFromCookies(req);
 
     if (!token) {
-      // No token in cookies, redirect to login
+      // Log denied access
+      console.log(`[RBAC] UNAUTHENTICATED access to ${pathname}: DENIED`);
       return redirectToLogin(req);
     }
 
     const decoded = verifyToken(token);
     if (!decoded) {
-      // Invalid or expired token, redirect to login
+      // Log invalid token
+      console.log(`[RBAC] INVALID TOKEN for ${pathname}: DENIED`);
       return redirectToLogin(req);
     }
 
-    // Token is valid, allow access
+    // Log successful frontend access
+    const role = decoded.role || "viewer";
+    console.log(
+      `[RBAC] ${role.toUpperCase()} ${decoded.email} accessed frontend: ${pathname}: ALLOWED`
+    );
+
     // Attach user info to request headers for route handlers
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-user-id", decoded.id);
     requestHeaders.set("x-user-email", decoded.email);
-    requestHeaders.set("x-user-role", decoded.role);
+    requestHeaders.set("x-user-role", role);
 
     return NextResponse.next({
       request: {
@@ -150,6 +190,13 @@ export function middleware(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
 
     if (!authHeader) {
+      // Log missing authorization
+      const missingAuthResult = evaluateAccess(
+        "unknown",
+        PERMISSIONS.READ,
+        "access",
+        pathname
+      );
       return buildForbiddenResponse(
         "Authorization header missing. Use: Authorization: Bearer <token>"
       );
@@ -166,29 +213,82 @@ export function middleware(req: NextRequest) {
     try {
       // Verify and decode JWT
       const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+      const userRole = decoded.role || "viewer";
+      const userEmail = decoded.email || "unknown";
 
-      // Check for role-based access control
+      // Determine the action based on HTTP method
+      const method = req.method;
+      let action = "read";
+      if (method === "POST") action = "create";
+      else if (method === "PUT" || method === "PATCH") action = "update";
+      else if (method === "DELETE") action = "delete";
+
+      // Check for role-based access control (existing functionality)
       const requiredRoles = getRequiredRoles(pathname);
 
-      if (requiredRoles && !hasRequiredRole(decoded.role, requiredRoles)) {
-        // eslint-disable-next-line no-console
+      if (
+        requiredRoles &&
+        requiredRoles.length > 0 &&
+        !hasRequiredRole(userRole, requiredRoles)
+      ) {
+        // Log role-based denial
+        logRBACAccess(userEmail, userRole, pathname, action, false);
+
         console.warn(
-          `Access denied for user ${decoded.email} (role: ${decoded.role}) to ${pathname}`
+          `Access DENIED: User ${userEmail} (role: ${userRole}) attempted ${action} on ${pathname}. Required roles: ${requiredRoles.join(", ")}`
         );
+
         return buildForbiddenResponse(
-          `Your role (${decoded.role}) does not have access to this resource. Required roles: ${requiredRoles.join(", ")}`
+          `Your role (${userRole}) does not have access to this resource. Required roles: ${requiredRoles.join(", ")}`
         );
       }
+
+      // Additional permission-based access check for enhanced RBAC
+      // Map HTTP methods to permissions
+      const permissionMap: Record<string, string> = {
+        GET: PERMISSIONS.READ,
+        POST: PERMISSIONS.CREATE,
+        PUT: PERMISSIONS.UPDATE,
+        PATCH: PERMISSIONS.UPDATE,
+        DELETE: PERMISSIONS.DELETE,
+      };
+
+      const requiredPermission = permissionMap[method] || PERMISSIONS.READ;
+
+      // Evaluate access with RBAC
+      const accessResult = evaluateAccess(
+        userRole,
+        requiredPermission,
+        action,
+        pathname
+      );
+
+      if (!accessResult.allowed) {
+        // Log permission-based denial
+        logRBACAccess(userEmail, userRole, pathname, action, false);
+        
+        console.warn(
+          `RBAC Access DENIED: User ${userEmail} (role: ${userRole}) lacks '${requiredPermission}' permission for ${method} ${pathname}`
+        );
+        
+        return buildForbiddenResponse(accessResult.reason);
+      }
+
+      // Log successful access
+      logRBACAccess(userEmail, userRole, pathname, action, true);
 
       // Attach user info to request headers for route handlers
       const requestHeaders = new Headers(req.headers);
       requestHeaders.set("x-user-id", decoded.id);
       requestHeaders.set("x-user-email", decoded.email);
-      requestHeaders.set("x-user-role", decoded.role);
+      requestHeaders.set("x-user-role", userRole);
+      requestHeaders.set(
+        "x-user-permissions",
+        getRolePermissions(userRole).join(",")
+      );
 
-      // eslint-disable-next-line no-console
       console.info(
-        `✓ User ${decoded.email} (${decoded.role}) authorized to access ${pathname}`
+        `✓ RBAC Access ALLOWED: ${userEmail} (${userRole}) | ${method} ${pathname} | Required: ${requiredPermission}`
       );
 
       return NextResponse.next({
@@ -198,23 +298,26 @@ export function middleware(req: NextRequest) {
       });
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
-        // eslint-disable-next-line no-console
-        console.warn("Token expired");
+        // Log expired token
+        console.warn("[RBAC] Token expired: DENIED");
         return buildForbiddenResponse(
           "Your authentication token has expired. Please log in again."
         );
       }
 
       if (error instanceof jwt.JsonWebTokenError) {
-        // eslint-disable-next-line no-console
-        console.warn("Invalid token:", error.message);
+        // Log invalid token
+        console.warn("[RBAC] Invalid token:", error.message);
         return buildForbiddenResponse(
           "Invalid authentication token. Please provide a valid token."
         );
       }
 
-      // eslint-disable-next-line no-console
-      console.error("Unexpected error during token verification:", error);
+      // Log unexpected error
+      console.error(
+        "[RBAC] Unexpected error during token verification:",
+        error
+      );
       return buildForbiddenResponse("An error occurred during authentication.");
     }
   }

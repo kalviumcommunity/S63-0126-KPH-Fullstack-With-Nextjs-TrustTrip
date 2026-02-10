@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { redis, CACHE_KEYS, CACHE_TTL } from "@/lib/redis";
+import {
+  hasPermission,
+  enforceAccessControl,
+  logAccessAttempt,
+  PERMISSIONS,
+} from "@/lib/rbac";
 
 /**
  * Generate a unique cache key based on query parameters
@@ -33,8 +39,42 @@ async function invalidateBookingsCache(): Promise<void> {
 }
 
 // GET /api/bookings - List all bookings with pagination and filtering
+/**
+ * GET /api/bookings
+ * List all bookings with pagination and filtering
+ * Protected Route: Requires 'read' permission
+ *
+ * Authorization: Bearer <JWT_TOKEN>
+ *
+ * RBAC:
+ * - Admin: Full access to all bookings
+ * - Editor: Can read all bookings
+ * - Viewer: Can read all bookings
+ */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
+
+  // Get user role from request headers
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "read",
+    "/api/bookings",
+    hasPermission(userRole, PERMISSIONS.READ)
+  );
+
+  // Check permission
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.READ,
+    "list_bookings",
+    "/api/bookings"
+  );
+  if (accessDenied) return accessDenied;
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -47,7 +87,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Filter parameters
-    const userId = searchParams.get("userId");
+    const filterUserId = searchParams.get("userId");
     const projectId = searchParams.get("projectId");
     const status = searchParams.get("status");
 
@@ -59,7 +99,7 @@ export async function GET(request: NextRequest) {
     const cacheKey = generateBookingsCacheKey({
       page,
       limit,
-      userId,
+      userId: filterUserId,
       projectId,
       status,
       sortBy,
@@ -71,10 +111,8 @@ export async function GET(request: NextRequest) {
     if (cached) {
       const cachedData = JSON.parse(cached);
       const responseTime = Date.now() - startTime;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[CACHE HIT] Bookings list - Response time: ${responseTime}ms`
-      );
+      console.log(`[CACHE HIT] Bookings list - Response time: ${responseTime}ms`);
+      console.log(`[RBAC] ${userRole} fetched bookings list (cached): ALLOWED`);
       return NextResponse.json({
         success: true,
         data: cachedData.bookings,
@@ -85,13 +123,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Cache miss - fetch from database
-    // eslint-disable-next-line no-console
     console.log(`[CACHE MISS] Bookings list - Fetching from database`);
 
     // Build where clause
     const where: Record<string, unknown> = {};
 
-    if (userId) where.userId = userId;
+    if (filterUserId) where.userId = filterUserId;
     if (projectId) where.projectId = projectId;
     if (status) where.status = status;
 
@@ -134,9 +171,9 @@ export async function GET(request: NextRequest) {
     );
 
     const responseTime = Date.now() - startTime;
-    // eslint-disable-next-line no-console
+    console.log(`[CACHE MISS] Bookings list - Response time: ${responseTime}ms`);
     console.log(
-      `[CACHE MISS] Bookings list - Response time: ${responseTime}ms`
+      `[RBAC] ${userRole} fetched bookings list (${bookings.length} bookings): ALLOWED`
     );
 
     return NextResponse.json({
@@ -147,6 +184,7 @@ export async function GET(request: NextRequest) {
       responseTime,
     });
   } catch (error) {
+    console.error(`[RBAC] ${userRole} failed to fetch bookings: DENIED`, error);
     console.error("Error fetching bookings:", error);
     return NextResponse.json(
       { success: false, error: "Failed to fetch bookings" },
@@ -156,16 +194,49 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/bookings - Create a new booking
+/**
+ * POST /api/bookings
+ * Create a new booking
+ * Protected Route: Requires 'create' permission (Admin/Editor only)
+ *
+ * Authorization: Bearer <JWT_TOKEN>
+ *
+ * RBAC:
+ * - Admin: Can create any booking
+ * - Editor: Can create bookings
+ * - Viewer: Cannot create bookings (DENIED)
+ */
 export async function POST(request: NextRequest) {
+  // Get user role from request headers
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "create",
+    "/api/bookings",
+    hasPermission(userRole, PERMISSIONS.CREATE)
+  );
+
+  // Check permission
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.CREATE,
+    "create_booking",
+    "/api/bookings"
+  );
+  if (accessDenied) return accessDenied;
+
   try {
     const body = await request.json();
-    const { quantity, totalPrice, userId, projectId } = body;
+    const { quantity, totalPrice, bookingUserId, projectId } = body;
 
     // Validate required fields
     const errors: string[] = [];
     if (!quantity) errors.push("quantity is required");
     if (!totalPrice) errors.push("totalPrice is required");
-    if (!userId) errors.push("userId is required");
+    if (!bookingUserId) errors.push("userId is required");
     if (!projectId) errors.push("projectId is required");
 
     if (errors.length > 0) {
@@ -177,7 +248,7 @@ export async function POST(request: NextRequest) {
 
     // Check if user exists
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: bookingUserId },
     });
 
     if (!user) {
@@ -204,7 +275,7 @@ export async function POST(request: NextRequest) {
       data: {
         quantity: Number(quantity),
         totalPrice: parseFloat(totalPrice),
-        userId,
+        userId: bookingUserId,
         projectId,
       },
       include: {
@@ -219,8 +290,11 @@ export async function POST(request: NextRequest) {
 
     // Invalidate cache after booking creation
     await invalidateBookingsCache();
-    // eslint-disable-next-line no-console
     console.log("[CACHE INVALIDATED] Bookings list cache cleared");
+
+    console.log(
+      `[RBAC] ${userRole} created booking ${booking.id}: ALLOWED`
+    );
 
     return NextResponse.json(
       {
@@ -231,9 +305,84 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    console.error(`[RBAC] ${userRole} failed to create booking: DENIED`, error);
     console.error("Error creating booking:", error);
     return NextResponse.json(
       { success: false, error: "Failed to create booking" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/bookings - Delete bookings in bulk
+/**
+ * DELETE /api/bookings
+ * Delete bookings in bulk
+ * Protected Route: Requires 'delete' permission (Admin only)
+ *
+ * Authorization: Bearer <JWT_TOKEN>
+ *
+ * RBAC:
+ * - Admin: Can delete any booking
+ * - Editor: Cannot delete bookings (DENIED)
+ * - Viewer: Cannot delete bookings (DENIED)
+ */
+export async function DELETE(request: NextRequest) {
+  const userRole = request.headers.get("x-user-role") || "viewer";
+  const userId = request.headers.get("x-user-id") || "unknown";
+
+  // Log access attempt
+  logAccessAttempt(
+    userRole,
+    "delete",
+    "/api/bookings",
+    hasPermission(userRole, PERMISSIONS.DELETE)
+  );
+
+  // Check permission - only admins can delete bookings
+  const accessDenied = enforceAccessControl(
+    userRole,
+    PERMISSIONS.DELETE,
+    "delete_bookings",
+    "/api/bookings"
+  );
+  if (accessDenied) return accessDenied;
+
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "No booking IDs provided for deletion" },
+        { status: 400 }
+      );
+    }
+
+    // Delete bookings
+    const deleteResult = await prisma.booking.deleteMany({
+      where: {
+        id: { in: ids },
+      },
+    });
+
+    // Invalidate cache
+    await invalidateBookingsCache();
+    console.log("[CACHE INVALIDATED] Bookings list cache cleared");
+
+    console.log(
+      `[RBAC] Admin ${userId} deleted ${deleteResult.count} bookings: ALLOWED`
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: { deletedCount: deleteResult.count },
+      message: `${deleteResult.count} booking(s) deleted successfully`,
+    });
+  } catch (error) {
+    console.error(`[RBAC] ${userRole} failed to delete bookings: DENIED`, error);
+    return NextResponse.json(
+      { success: false, error: "Failed to delete bookings" },
       { status: 500 }
     );
   }

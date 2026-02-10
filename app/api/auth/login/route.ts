@@ -1,11 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-  hashToken,
-} from "@/lib/auth";
-import { redis } from "@/lib/redis";
+
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/auth/login - Authenticate user and return JWT token
@@ -58,26 +53,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate access and refresh tokens
-    const accessToken = generateAccessToken({
+
       userId: user.id,
       email: user.email,
       name: user.name,
+      role: userRole,
     });
 
-    const { token: refreshToken, jti } = generateRefreshToken({
-      userId: user.id,
-      email: user.email,
-    });
 
-    // Store hashed refresh token in Redis keyed by userId and jti
-    const key = `refresh:${user.id}:${jti}`;
-    const hashed = await hashToken(refreshToken);
-    // expire after 7 days (604800 seconds)
-    await redis.set(key, hashed, "EX", 60 * 60 * 24 * 7);
-
-    // Build response and set cookies (httpOnly, secure, SameSite)
-    const res = NextResponse.json(
       {
         success: true,
         data: {
@@ -86,6 +69,7 @@ export async function POST(request: NextRequest) {
             email: user.email,
             name: user.name,
             verified: user.verified,
+            role: userRole,
           },
         },
         message: "Login successful",
