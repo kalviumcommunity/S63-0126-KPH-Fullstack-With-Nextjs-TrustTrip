@@ -1355,6 +1355,94 @@ These rules ensure code quality and prevent accidental breaking changes to the m
 
 ---
 
+## Cloud PostgreSQL Database Setup
+
+### Overview
+
+TrustTrip supports deployment with a managed PostgreSQL database on AWS RDS or Azure Database for PostgreSQL. This provides production-grade database infrastructure with automated backups, high availability, and robust security features.
+
+### Documentation
+
+For comprehensive setup instructions including:
+
+- **Cloud Provider Configuration**
+  - AWS RDS instance setup with free-tier options
+  - Azure Database for PostgreSQL flexible server configuration
+  - Region selection and instance sizing
+
+- **Network Security**
+  - AWS Security Group configuration (IP allowlisting)
+  - Azure Firewall rules setup
+  - SSL/TLS certificate management
+
+- **Connection Management**
+  - Environment variable configuration
+  - Connection string formatting
+  - Direct PostgreSQL connection testing
+
+- **Backup & Recovery**
+  - Automated backup configuration
+  - Point-in-time recovery
+  - Manual snapshot management
+
+- **Scaling & Performance**
+  - Vertical scaling options
+  - Horizontal scaling with read replicas
+  - Connection pooling strategies
+
+- **Cost Management**
+  - Free-tier optimization
+  - Cost estimation and monitoring
+  - Scaling cost considerations
+
+**See [README_POSTGRES_CLOUD.md](README_POSTGRES_CLOUD.md) for complete documentation.**
+
+### Quick Start (Cloud Database)
+
+#### 1. Configure Environment
+
+Create `.env.production` with your cloud database URL:
+
+```bash
+# AWS RDS Example
+DATABASE_URL="postgresql://admin:password@trusttrip-db.xxxxxx.ap-south-1.rds.amazonaws.com:5432/trusttrip_db"
+
+# Azure Database Example
+DATABASE_URL="postgresql://admin@trusttrip-postgres:password@trusttrip-postgres.postgres.database.azure.com:5432/trusttrip_db"
+```
+
+#### 2. Run Migrations
+
+```bash
+# Apply database schema to cloud instance
+npx prisma migrate deploy
+```
+
+#### 3. Test Connection
+
+```bash
+# Test Prisma connection (via app)
+curl https://your-domain.com/api/test
+
+# Test direct PostgreSQL connection
+curl https://your-domain.com/api/test/pg
+```
+
+### API Endpoints for Testing
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/test` | GET | Test Prisma ORM database connection |
+| `/api/test/pg` | GET | Test direct PostgreSQL connection |
+| `/api/test/pg` | POST | Execute custom SQL queries (SELECT only) |
+
+### Cloud Database Features Used
+
+- **Prisma ORM**: Type-safe database operations
+- **Direct PostgreSQL**: Alternative connection via `pg` library
+- **SSL/TLS**: Encrypted connections in production
+- **Connection Pooling**: Efficient connection management
+
 ## Docker & Docker Compose Setup
 
 This project is containerized to ensure consistent development and production environments across all team members' machines. This eliminates the classic "it works on my machine" problem.
