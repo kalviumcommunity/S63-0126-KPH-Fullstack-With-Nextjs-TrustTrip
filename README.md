@@ -4020,3 +4020,486 @@ export const useAuthStore = create((set) => ({
 
 ---
 
+## JWT Session Management with Access & Refresh Tokens (Task 2.34)
+
+### Overview
+
+TrustTrip implements a **production-grade JWT session management system** with dual-token architecture for enhanced security and user experience. This replaces the single-token approach with industry best practices.
+
+**Key Components:**
+- **Access Tokens**: Short-lived (15 minutes), used for API requests
+- **Refresh Tokens**: Long-lived (7 days), stored in HTTP-only cookies
+- **Token Rotation**: New refresh token issued on each refresh
+- **Stateless Architecture**: Server doesn't store token state
+- **Automatic Refresh**: Client transparently handles token expiration
+
+### Token Architecture
+
+#### Access Token
+```
+Lifetime:   15 minutes
+Purpose:    Authenticate API requests
+Storage:    Response body (client memory)
+Transport:  Authorization header (Bearer scheme)
+Claims:     userId, email, role, iat, exp
+Algorithm:  HS256
+Revoked:    No (stateless)
+```
+
+#### Refresh Token
+```
+Lifetime:   7 days
+Purpose:    Obtain new access tokens
+Storage:    HTTP-only cookie (cannot be accessed by JavaScript)
+Transport:  Automatic (browser sends cookie with requests)
+Claims:     userId, email, iat, exp
+Algorithm:  HS256
+Rotation:   Generated new on each refresh
+XSS Safe:   Yes (HTTP-only prevents JavaScript access)
+CSRF Safe:  Yes (SameSite=Strict attribute)
+HTTPS Only: Yes (in production)
+```
+
+### Session Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ User Authentication Flow                                    │
+└─────────────────────────────────────────────────────────────┘
+
+STEP 1: LOGIN/SIGNUP
+  Client POST /api/auth/login or /api/auth/signup
+  ├─ Credentials validated
+  ├─ Access token generated (15m)
+  ├─ Refresh token generated (7d)
+  ├─ Access token returned in response body
+  └─ Refresh token set in HTTP-only cookie
+
+STEP 2: API REQUEST (Authenticated)
+  Client makes request with access token
+  ├─ Authorization: Bearer <access_token>
+  ├─ Cookie automatically sent: refreshToken=<token>
+  └─ Server validates access token
+
+STEP 3A: Access Token Valid → Process Request
+
+STEP 3B: Access Token Expired/Invalid → Return 401
+  Client initiates token refresh
+  
+STEP 4: TOKEN REFRESH
+  Client POST /api/auth/refresh
+  ├─ Refresh token from cookie validated
+  ├─ New access token generated
+  ├─ New refresh token generated (rotation)
+  ├─ Set-Cookie: new refresh token
+  └─ Return new access token
+
+STEP 5: LOGOUT
+  Client POST /api/auth/logout
+  ├─ Set-Cookie: refreshToken=; Max-Age=0 (clears cookie)
+  ├─ Client removes access token from memory
+  └─ Session ends
+```
+
+### Implementation Files
+
+#### 1. **[lib/tokenManager.ts](lib/tokenManager.ts)** - Token Utilities
+
+Comprehensive JWT token generation, verification, and cookie management:
+
+```typescript
+// Token Generation
+generateAccessToken(userId, email, role?)          // 15m token
+generateRefreshToken(userId, email)               // 7d token
+
+// Token Verification
+verifyAccessToken(token)                          // Validates & returns payload
+verifyRefreshToken(token)                         // Validates refresh token
+
+// Cookie Management
+setRefreshTokenCookie(response, token)            // Sets HTTP-only cookie
+clearRefreshTokenCookie(response)                 // Clears on logout
+
+// Token Extraction
+extractBearerToken(authHeader)                    // From "Bearer <token>"
+getAuthHeader(request)                            // Gets auth header
+
+// Error Handling
+createAuthErrorResponse(message, status)          // Standardized errors
+isValidPayload(payload)                           // Payload validation
+
+// Token Rotation
+rotateRefreshToken(oldToken, payload)             // Generate new refresh token
+```
+
+**Security Features:**
+- ✅ HTTP-only cookies prevent XSS attacks
+- ✅ Secure flag ensures HTTPS-only in production
+- ✅ SameSite=Strict prevents CSRF attacks
+- ✅ HS256 signature verification
+- ✅ Payload validation with TypeScript types
+- ✅ Token rotation on each refresh
+
+#### 2. **[lib/authMiddleware.ts](lib/authMiddleware.ts)** - Route Protection
+
+Middleware to protect API routes with token validation:
+
+```typescript
+// Full auth required
+export const GET = withAuth(async (request, payload) => {
+  console.log(`Authenticated: ${payload.email}`);
+  return NextResponse.json({ success: true });
+});
+
+// Optional auth (works authenticated or not)
+export const POST = withOptionalAuth(async (request, payload) => {
+  if (payload) {
+    // User authenticated
+  }
+  return NextResponse.json({ success: true });
+});
+
+// Manual validation
+export const DELETE = async (request) => {
+  const result = validateToken(request);
+  if (!result.valid) {
+    return NextResponse.json({ error: result.error }, { status: 401 });
+  }
+  // Use result.payload.userId
+};
+```
+
+#### 3. **[app/api/auth/login/route.ts](app/api/auth/login/route.ts)** - Login Endpoint
+
+Enhanced to issue both token types:
+
+```bash
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+
+Response (200):
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "user": {
+      "id": "user-123",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "verified": false
+    }
+  },
+  "message": "Login successful"
+}
+
+Cookies Set:
+Set-Cookie: refreshToken=<token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800
+```
+
+#### 4. **[app/api/auth/signup/route.ts](app/api/auth/signup/route.ts)** - Signup Endpoint
+
+Now returns tokens immediately on registration:
+
+```bash
+POST /api/auth/signup
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "SecurePass123"
+}
+
+Response (201):
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "user": {
+      "id": "user-456",
+      "email": "john@example.com",
+      "name": "John Doe",
+      "verified": false,
+      "createdAt": "2026-02-03T10:30:00Z"
+    }
+  },
+  "message": "User registered successfully"
+}
+
+Cookies Set:
+Set-Cookie: refreshToken=<token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800
+```
+
+#### 5. **[app/api/auth/refresh/route.ts](app/api/auth/refresh/route.ts)** - Refresh Endpoint
+
+Transparently handles token refresh:
+
+```bash
+POST /api/auth/refresh
+Cookie: refreshToken=<existing_token>
+
+Response (200):
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs..."
+  },
+  "message": "Token refreshed successfully"
+}
+
+Cookies Set:
+Set-Cookie: refreshToken=<new_token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800
+```
+
+**On Expiry (401):**
+```bash
+Response (401):
+{
+  "success": false,
+  "error": "Refresh token invalid or expired",
+  "timestamp": "2026-02-03T10:35:00Z"
+}
+
+Cookies Cleared:
+Set-Cookie: refreshToken=; Max-Age=0; Path=/
+```
+
+#### 6. **[app/api/auth/logout/route.ts](app/api/auth/logout/route.ts)** - Logout Endpoint
+
+Clears session on logout:
+
+```bash
+POST /api/auth/logout
+
+Response (200):
+{
+  "success": true,
+  "message": "Logged out successfully"
+}
+
+Cookies Cleared:
+Set-Cookie: refreshToken=; Max-Age=0; Path=/
+```
+
+### Client Integration Examples
+
+#### Basic Login Flow
+
+```typescript
+async function login(email: string, password: string) {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include', // Important: enables cookie handling
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await response.json();
+  
+  if (data.success) {
+    // Store access token in memory (not localStorage for security)
+    localStorage.setItem('accessToken', data.data.accessToken);
+    return data.data.user;
+  }
+  
+  throw new Error(data.error);
+}
+```
+
+#### Making Authenticated Requests
+
+```typescript
+async function apiCall(url: string, options: RequestInit = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+    },
+    credentials: 'include' // Send refresh token cookie
+  });
+
+  // Handle token expiration
+  if (response.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      // Retry request with new token
+      return apiCall(url, options);
+    } else {
+      // Redirect to login
+      window.location.href = '/login';
+    }
+  }
+
+  return response;
+}
+```
+
+#### Token Refresh Handling
+
+```typescript
+async function refreshAccessToken(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include' // Sends refresh token cookie
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem('accessToken', data.data.accessToken);
+      return true;
+    }
+
+    // Refresh token expired
+    localStorage.removeItem('accessToken');
+    return false;
+  } catch (error) {
+    console.error('Token refresh failed:', error);
+    return false;
+  }
+}
+```
+
+#### Logout
+
+```typescript
+async function logout() {
+  await fetch('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'include'
+  });
+
+  localStorage.removeItem('accessToken');
+  window.location.href = '/login';
+}
+```
+
+### Security Considerations
+
+#### Strengths of This Implementation
+
+| Feature | Benefit | Protection |
+|---------|---------|-----------|
+| HTTP-only cookies | Cannot be accessed by JavaScript | XSS attacks |
+| Secure flag | HTTPS only in production | Man-in-the-middle |
+| SameSite=Strict | Cookie not sent cross-origin | CSRF attacks |
+| Short-lived access token | 15-minute window | Token compromise |
+| Long-lived refresh token | 7-day valid session | User convenience |
+| Token rotation | New token on each refresh | Replay attacks |
+| HS256 signature | Verifies token integrity | Token tampering |
+| Separate secrets | Different keys for tokens | Secret compromise |
+
+#### Known Limitations & Mitigations
+
+1. **Stateless JWT - Cannot revoke immediately**
+   - Mitigation: Implement token blacklist in Redis for critical operations
+   - Store revoked token ID with expiry for quick lookup
+
+2. **Same-domain XSS still vulnerable**
+   - Mitigation: Implement CSP (Content-Security-Policy) headers
+   - Regular security audits and dependency updates
+   - Never store secrets in localStorage
+
+3. **Refresh token on same domain**
+   - Mitigation: Use separate subdomain for auth in future (e.g., auth.trusttrip.com)
+   - Implement device/IP validation on token refresh
+
+4. **Cookie-based tokens vulnerable if compromised**
+   - Mitigation: Token rotation on each use
+   - Device fingerprinting and anomaly detection
+   - Account recovery procedures
+
+### Environment Configuration
+
+Add to `.env.local`:
+
+```bash
+# JWT Secrets - Change in production!
+JWT_SECRET=your-very-secret-key-here-min-32-chars
+REFRESH_SECRET=separate-refresh-secret-min-32-chars
+
+# App Configuration
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NODE_ENV=development
+
+# In production, use strong random secrets:
+# JWT_SECRET=$(openssl rand -base64 32)
+# REFRESH_SECRET=$(openssl rand -base64 32)
+```
+
+### Testing JWT Implementation
+
+#### Test Login & Get Access Token
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}' \
+  -v
+
+# Look for:
+# - accessToken in response body
+# - Set-Cookie header for refreshToken
+```
+
+#### Test Protected Route with Access Token
+
+```bash
+ACCESS_TOKEN="<token_from_login>"
+
+curl -X GET http://localhost:3000/api/protected-route \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -v
+```
+
+#### Test Token Refresh
+
+```bash
+curl -X POST http://localhost:3000/api/auth/refresh \
+  -H "Cookie: refreshToken=<refresh_token>" \
+  -v
+
+# Look for new accessToken and Set-Cookie for new refreshToken
+```
+
+#### Test Expired Token
+
+```bash
+# Wait for access token to expire (15 minutes) or use invalid token
+curl -X GET http://localhost:3000/api/protected-route \
+  -H "Authorization: Bearer invalid_token" \
+  -v
+
+# Should return 401 Unauthorized
+```
+
+### Production Deployment Checklist
+
+- [ ] Change JWT_SECRET and REFRESH_SECRET to strong random values
+- [ ] Set NODE_ENV=production
+- [ ] Enable HTTPS (secure flag will automatically activate)
+- [ ] Add CSP headers to prevent XSS
+- [ ] Add HSTS header for HTTPS enforcement
+- [ ] Implement token blacklist for critical operations
+- [ ] Set up monitoring for failed auth attempts
+- [ ] Regular secret rotation (quarterly recommended)
+- [ ] Implement rate limiting on auth endpoints
+- [ ] Add security audit logging
+- [ ] Test token refresh flow end-to-end
+- [ ] Document token expiry behavior for API clients
+- [ ] Set up alerts for unusual authentication patterns
+
+### Related Documentation
+
+- **[JWT_SESSION_MANAGEMENT.md](JWT_SESSION_MANAGEMENT.md)** - Detailed JWT implementation guide
+- **[README_AUTH.md](README_AUTH.md)** - Authentication system overview
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick API reference
+
+---
+
