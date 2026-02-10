@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { generateToken } from "@/lib/auth";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  hashToken,
+} from "@/lib/auth";
+import { redis } from "@/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/auth/login - Authenticate user and return JWT token
@@ -53,19 +58,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate JWT token with user ID and email
-    const token = generateToken({
+    // Generate access and refresh tokens
+    const accessToken = generateAccessToken({
       userId: user.id,
       email: user.email,
       name: user.name,
     });
 
-    // Return success response with token
-    return NextResponse.json(
+    const { token: refreshToken, jti } = generateRefreshToken({
+      userId: user.id,
+      email: user.email,
+    });
+
+    // Store hashed refresh token in Redis keyed by userId and jti
+    const key = `refresh:${user.id}:${jti}`;
+    const hashed = await hashToken(refreshToken);
+    // expire after 7 days (604800 seconds)
+    await redis.set(key, hashed, "EX", 60 * 60 * 24 * 7);
+
+    // Build response and set cookies (httpOnly, secure, SameSite)
+    const res = NextResponse.json(
       {
         success: true,
         data: {
-          token,
           user: {
             id: user.id,
             email: user.email,
@@ -74,11 +89,36 @@ export async function POST(request: NextRequest) {
           },
         },
         message: "Login successful",
+        // include jti as a proof of rotation for demo/logging (not sensitive)
+        rotation: { refresh_jti: jti },
       },
       { status: 200 }
     );
+
+    const isProd = process.env.NODE_ENV === "production";
+
+    res.cookies.set({
+      name: "accessToken",
+      value: accessToken,
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 15, // 15 minutes
+    });
+
+    res.cookies.set({
+      name: "refreshToken",
+      value: refreshToken,
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return res;
   } catch (error) {
-    console.error("Error during login:", error);
     return NextResponse.json(
       { success: false, error: "Failed to authenticate user" },
       { status: 500 }

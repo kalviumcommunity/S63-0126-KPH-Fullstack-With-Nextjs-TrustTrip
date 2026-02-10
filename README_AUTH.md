@@ -223,6 +223,99 @@ export async function POST(request: NextRequest) {
 
 ---
 
+## JWT & Session Management (Access + Refresh Tokens)
+
+This project uses a dual-token approach to manage sessions securely:
+- Access Token: short-lived (15 minutes) used for authenticated API requests.
+- Refresh Token: long-lived (7 days) stored as an httpOnly cookie and rotated on use.
+
+### Token Structure
+
+Each JWT has three parts: header, payload, signature.
+
+- Header: algorithm and token type, e.g. `{ "alg": "HS256", "typ": "JWT" }`.
+- Payload: claims such as `userId`, `email`, and for refresh tokens a `jti` (token id).
+- Signature: HMAC of header.payload using `JWT_SECRET` to prevent tampering.
+
+Example (decoded payload):
+
+```json
+{
+  "userId": "user_cuid_abc",
+  "email": "alice@example.com",
+  "jti": "a-uuid-for-refresh-tokens",
+  "iat": 167...,
+  "exp": 167... 
+}
+```
+
+### Storage Locations & Rationale
+
+- Access token: stored in an HTTP-only cookie named `accessToken` with `SameSite=Lax`. Short lifetime reduces window for replay if stolen from network.
+- Refresh token: stored in an HTTP-only cookie named `refreshToken` with `SameSite=Lax` and `Secure` in production. Refresh tokens are never available to JavaScript.
+
+Avoid `localStorage` or other JS-accessible storage to mitigate XSS surface.
+
+### Expiry and Refresh Flow
+
+1. On successful login (`POST /api/auth/login`) the server issues both tokens and sets them as httpOnly cookies.
+2. When the access token expires (15m), the client calls `POST /api/auth/refresh` (no body required). The browser includes the `refreshToken` cookie automatically.
+3. The server validates the refresh token signature and checks the server-side store (Redis) for a matching hashed refresh token using the token's `jti` and `userId`.
+4. If valid, the server deletes the old refresh entry (revocation) and issues a new refresh token (rotated) + a new access token. The new refresh token hash is stored and the new cookies are set.
+5. The server returns a minimal JSON response including non-sensitive rotation info to demonstrate token rotation during demo.
+
+This rotation reduces replay risk: a stolen refresh token is invalidated after use.
+
+### Token Rotation Proof (Demo)
+
+The API includes a `rotation` field in the JSON response on login/refresh for demonstration purposes (contains `old_jti`/`new_jti`). This is non-sensitive metadata to show that rotation occurred.
+
+### Logout / Revocation
+
+- `POST /api/auth/logout` will attempt to revoke the refresh token server-side (delete the Redis entry) and clear both cookies.
+
+### Security Threats & Mitigations
+
+- XSS: Tokens are stored in `httpOnly` cookies (not accessible by JS). Avoids exposing tokens to malicious scripts.
+- CSRF: Use `SameSite=Lax` on auth cookies to reduce CSRF risk for unsafe methods. For stricter protections, implement CSRF tokens on state-changing endpoints.
+- Replay: Refresh token rotation with server-side hashed storage and immediate deletion of used tokens prevents reuse of a stolen refresh token.
+- Token Theft in Transit: Use HTTPS (cookies set `Secure` in production) so cookies aren't sent over plain HTTP.
+- Brute-force / DB leaks: Refresh tokens are hashed (bcrypt) in Redis so leaked DB/Redis snapshots don't reveal raw tokens.
+
+Trade-offs:
+- Storing refresh tokens server-side (Redis) increases stateful complexity vs fully stateless JWTs but allows immediate revocation and rotation.
+- `httpOnly` cookies provide good XSS protection but require CSRF considerations; `SameSite` mitigates many cases.
+
+### Example Refresh Flow (curl)
+
+Note: cookies are httpOnly so normal curl examples below simulate cookie handling via `--cookie`/`--cookie-jar`.
+
+1) Login (receive cookies)
+
+```bash
+curl -c cookies.txt -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alice@example.com","password":"mypassword"}'
+```
+
+2) Refresh (browser sends refresh cookie automatically; with curl use `-b`):
+
+```bash
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/auth/refresh
+```
+
+3) Logout:
+
+```bash
+curl -b cookies.txt -X POST http://localhost:3000/api/auth/logout
+```
+
+---
+
+If you want, I can add small client-side helpers to automatically call `/api/auth/refresh` when 401s occur and to surface rotation logs in the UI for the demo.
+
+---
+
 ### Login API
 
 **Endpoint**: `POST /api/auth/login`
