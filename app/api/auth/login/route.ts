@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { generateToken } from "@/lib/auth";
-import { getDefaultRole } from "@/lib/rbac";
+
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/auth/login - Authenticate user and return JWT token
@@ -54,26 +53,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user role (default to 'viewer' if not set)
-    const userRole = user.role || getDefaultRole();
 
-    // Generate JWT token with user ID, email, and role for RBAC
-    const token = generateToken({
       userId: user.id,
       email: user.email,
       name: user.name,
       role: userRole,
     });
 
-    // Log successful login with role info
-    console.log(`[AUTH] User ${email} logged in with role: ${userRole}`);
 
-    // Return success response with token
-    return NextResponse.json(
       {
         success: true,
         data: {
-          token,
           user: {
             id: user.id,
             email: user.email,
@@ -83,11 +73,36 @@ export async function POST(request: NextRequest) {
           },
         },
         message: "Login successful",
+        // include jti as a proof of rotation for demo/logging (not sensitive)
+        rotation: { refresh_jti: jti },
       },
       { status: 200 }
     );
+
+    const isProd = process.env.NODE_ENV === "production";
+
+    res.cookies.set({
+      name: "accessToken",
+      value: accessToken,
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 15, // 15 minutes
+    });
+
+    res.cookies.set({
+      name: "refreshToken",
+      value: refreshToken,
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return res;
   } catch (error) {
-    console.error("Error during login:", error);
     return NextResponse.json(
       { success: false, error: "Failed to authenticate user" },
       { status: 500 }

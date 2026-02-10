@@ -1,66 +1,71 @@
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions, JwtPayload } from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 
 // JWT secret key - in production, use a strong secret from environment variables
-// Generate a secure secret: openssl rand -base64 32
 const JWT_SECRET: string =
   process.env.JWT_SECRET || "trusttrip-super-secret-key-change-in-production";
 
-// Token expiry time
-export const JWT_EXPIRY = "1h";
+// Token expiry settings
+export const ACCESS_TOKEN_EXPIRY = "15m";
 export const REFRESH_TOKEN_EXPIRY = "7d";
 
 /**
- * Generate a JWT token for a user
- * @param payload - Object containing user data (userId, email, role, etc.)
- * @param expiresIn - Token expiry time (default: '1h')
- * @returns JWT token string
- * 
- * Note: Include 'role' in payload for RBAC support
- * Example: generateToken({ userId, email, role: 'admin' })
+
  */
-export function generateToken(
-  payload: Record<string, unknown>,
-  expiresIn: string = JWT_EXPIRY
-): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return jwt.sign(payload, JWT_SECRET, { expiresIn } as any);
+export function generateAccessToken(payload: JwtPayload | string): string {
+  const options: SignOptions = { expiresIn: ACCESS_TOKEN_EXPIRY };
+  return jwt.sign(payload, JWT_SECRET, options);
+}
+
+/**
+ * Generate a refresh token (long-lived) and return its token + jti
+ */
+export function generateRefreshToken(payload: JwtPayload | string): {
+  token: string;
+  jti: string;
+} {
+  const jti = randomUUID();
+  const options: SignOptions = { expiresIn: REFRESH_TOKEN_EXPIRY };
+  const token = jwt.sign(
+    { ...(typeof payload === "object" ? payload : {}), jti },
+    JWT_SECRET,
+    options
+  );
+  return { token, jti };
 }
 
 /**
  * Verify and decode a JWT token
- * @param token - JWT token to verify
- * @returns Decoded payload or null if invalid
  */
-export function verifyToken(token: string): Record<string, unknown> | null {
+export function verifyToken(token: string): JwtPayload | string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const decoded = jwt.verify(token, JWT_SECRET, {} as any);
-    return decoded as unknown as Record<string, unknown>;
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("JWT verification failed:", error);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded as JwtPayload | string;
+  } catch {
     return null;
   }
 }
 
 /**
- * Extract token from Authorization header
- * @param authHeader - Authorization header value (e.g., "Bearer <token>")
- * @returns Token string or null if not found
+ * Hash a token (used for refresh token storage)
  */
-export function extractTokenFromHeader(
-  authHeader: string | null
-): string | null {
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
-  }
-  return authHeader.substring(7);
+export async function hashToken(token: string): Promise<string> {
+  return bcrypt.hash(token, 10);
 }
 
 /**
- * Decode token without verification (for debugging)
- * @param token - JWT token to decode
- * @returns Decoded payload or null if invalid
+ * Compare a token against a stored hash
+ */
+export async function compareToken(
+  token: string,
+  hash: string
+): Promise<boolean> {
+  return bcrypt.compare(token, hash);
+}
+
+/**
+ * Decode token without verifying signature (debugging)
  */
 export function decodeToken(token: string): Record<string, unknown> | null {
   try {
