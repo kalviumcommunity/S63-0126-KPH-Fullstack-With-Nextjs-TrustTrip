@@ -4503,3 +4503,371 @@ curl -X GET http://localhost:3000/api/protected-route \
 
 ---
 
+## Security Headers & HTTPS Enforcement (Task 2.37)
+
+### Overview
+
+TrustTrip implements **production-grade security headers** following OWASP best practices to protect against common web vulnerabilities including XSS, clickjacking, MIME sniffing, and insecure connections.
+
+**Implemented Security Measures:**
+- ✅ **HSTS**: Forces HTTPS for 2 years with subdomain support
+- ✅ **CSP**: Prevents XSS and code injection attacks
+- ✅ **CORS**: Restricts cross-origin requests to whitelisted domains
+- ✅ **X-Frame-Options**: Prevents clickjacking (iframe embedding)
+- ✅ **X-Content-Type-Options**: Prevents MIME sniffing attacks
+- ✅ **Referrer-Policy**: Controls referrer information leakage
+- ✅ **Permissions-Policy**: Disables unnecessary browser features
+
+### Security Headers Configuration
+
+#### 1. HSTS (HTTP Strict Transport Security)
+
+**Purpose**: Enforces HTTPS connections exclusively, preventing protocol downgrade and man-in-the-middle attacks.
+
+```
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+```
+
+**Configuration Details**:
+- `max-age=63072000`: 2 years (730 days) - recommended minimum for preload
+- `includeSubDomains`: Applies to all subdomains (e.g., api.trusttrip.com)
+- `preload`: Eligible for browser HSTS preload lists
+
+**Security Benefits**:
+- Prevents HTTPS → HTTP downgrade attacks
+- Blocks SSL stripping attacks
+- Ensures secure cookie transmission
+- Protects against man-in-the-middle attacks
+
+**Important**: Only effective over HTTPS. Browsers ignore this header on HTTP connections.
+
+#### 2. CSP (Content Security Policy)
+
+**Purpose**: Prevents XSS attacks by defining trusted content sources.
+
+```
+Content-Security-Policy: 
+  default-src 'self'; 
+  script-src 'self' 'unsafe-eval' 'unsafe-inline'; 
+  style-src 'self' 'unsafe-inline'; 
+  img-src 'self' data: https:; 
+  font-src 'self' data:; 
+  connect-src 'self'; 
+  frame-ancestors 'none'; 
+  base-uri 'self'; 
+  form-action 'self'
+```
+
+**Directive Breakdown**:
+- `default-src 'self'`: Only load resources from same origin by default
+- `script-src`: Allow scripts from same origin + eval/inline (required for Next.js)
+- `style-src`: Allow styles from same origin + inline (required for React CSS-in-JS)
+- `img-src 'self' data: https:`: Images from same origin, data URIs, and any HTTPS
+- `connect-src 'self'`: Restrict AJAX/fetch/WebSocket to same origin
+- `frame-ancestors 'none'`: Cannot be embedded in iframes (clickjacking protection)
+- `form-action 'self'`: Only allow form submissions to same origin
+
+**Security Trade-offs**:
+- ⚠️ `'unsafe-eval'` required for Next.js hot reload in development
+- ⚠️ `'unsafe-inline'` required for React inline styles
+- Future: Migrate to nonces for stricter CSP in production
+
+#### 3. CORS (Cross-Origin Resource Sharing)
+
+**Purpose**: Controls which external domains can access API resources.
+
+**Configuration** (via `lib/cors.ts`):
+```typescript
+{
+  origin: whitelisted domains only (no wildcards),
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  credentials: true,  // Allows cookies
+  maxAge: 3600        // 1-hour preflight cache
+}
+```
+
+**Origin Whitelist**:
+- Production: Set via `ALLOWED_ORIGINS` environment variable
+- Development: `localhost:3000`, `localhost:3001`
+- **No wildcards (`*`) allowed in production**
+
+**Security Benefits**:
+- Prevents unauthorized API access from external sites
+- Protects against CSRF attacks
+- Allows legitimate cross-origin requests (e.g., mobile apps)
+- Supports cookie-based authentication securely
+
+**Implementation Example**:
+```typescript
+// app/api/auth/refresh/route.ts
+import { addCorsHeaders } from "@/lib/cors";
+
+export async function POST(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  const response = NextResponse.json({ success: true });
+  return addCorsHeaders(response, origin);
+}
+```
+
+#### 4. X-Frame-Options
+
+**Purpose**: Prevents clickjacking by blocking iframe embedding.
+
+```
+X-Frame-Options: DENY
+```
+
+**Options**:
+- `DENY`: Cannot be embedded anywhere (most secure)
+- `SAMEORIGIN`: Can only be embedded by same origin
+- Note: CSP `frame-ancestors 'none'` provides same protection
+
+#### 5. X-Content-Type-Options
+
+**Purpose**: Prevents MIME sniffing attacks.
+
+```
+X-Content-Type-Options: nosniff
+```
+
+**Security Benefit**: Browsers respect declared Content-Type and won't execute files as scripts if type is wrong.
+
+#### 6. Referrer-Policy
+
+**Purpose**: Controls referrer information disclosure.
+
+```
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+**Behavior**:
+- Same-origin requests: Full URL sent
+- Cross-origin HTTPS→HTTPS: Only origin sent
+- Cross-origin HTTPS→HTTP: No referrer (protects sensitive URLs)
+
+#### 7. Permissions-Policy
+
+**Purpose**: Restricts browser feature access.
+
+```
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+```
+
+**Features Disabled**:
+- Camera access
+- Microphone access
+- Geolocation tracking
+
+### Implementation Architecture
+
+#### Global Headers (next.config.ts)
+
+All security headers except CORS are configured globally:
+
+```typescript
+// next.config.ts
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",  // Apply to all routes
+        headers: [
+          { key: "Strict-Transport-Security", value: "..." },
+          { key: "Content-Security-Policy", value: "..." },
+          // ... other headers
+        ],
+      },
+    ];
+  },
+};
+```
+
+**Advantages**:
+- Automatic application to all pages and API routes
+- Consistent security posture
+- No need to repeat configuration
+
+#### Per-Route CORS (lib/cors.ts)
+
+CORS headers applied per-route for flexibility:
+
+```typescript
+// Centralized CORS utility
+export function addCorsHeaders(
+  response: NextResponse,
+  requestOrigin: string | null,
+  options?: CorsOptions
+): NextResponse
+```
+
+**Routes with CORS**:
+- ✅ `app/api/auth/refresh/route.ts`
+- ✅ `app/api/auth/logout/route.ts`
+
+### Environment Configuration
+
+Add to `.env.local` or production environment:
+
+```bash
+# CORS Allowed Origins (comma-separated)
+ALLOWED_ORIGINS=https://trusttrip.com,https://app.trusttrip.com
+
+# App URL
+NEXT_PUBLIC_APP_URL=https://trusttrip.com
+
+# Environment
+NODE_ENV=production
+```
+
+### Verification & Testing
+
+#### Browser DevTools
+
+1. Open DevTools (F12) → Network tab
+2. Make a request
+3. Check Response Headers
+
+**Expected Headers**:
+```
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+content-security-policy: default-src 'self'; script-src 'self' 'unsafe-eval' ...
+x-frame-options: DENY
+x-content-type-options: nosniff
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+```
+
+#### cURL Testing
+
+**Test All Headers**:
+```bash
+curl -I http://localhost:3000/
+```
+
+**Test CORS**:
+```bash
+curl -X OPTIONS http://localhost:3000/api/auth/refresh \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: POST" \
+  -v
+```
+
+**Expected CORS Headers**:
+```
+access-control-allow-origin: http://localhost:3000
+access-control-allow-methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+access-control-allow-credentials: true
+access-control-max-age: 3600
+```
+
+#### Security Scanner Tools
+
+**Recommended Tools**:
+- [Mozilla Observatory](https://observatory.mozilla.org/) - Comprehensive security scan
+- [Security Headers](https://securityheaders.com/) - Header analysis
+- [SSL Labs](https://www.ssllabs.com/ssltest/) - HTTPS configuration test
+- [OWASP ZAP](https://www.zaproxy.org/) - Vulnerability scanner
+
+**Expected Scores**:
+- Mozilla Observatory: A+ (90+)
+- Security Headers: A+
+- SSL Labs: A+ (with proper HTTPS)
+
+### Security vs Flexibility Trade-offs
+
+#### 1. CSP Unsafe Directives
+
+**Issue**: `'unsafe-inline'` and `'unsafe-eval'` reduce XSS protection
+
+**Current Approach**: Required for Next.js hot reload and React CSS-in-JS
+
+**Future Enhancement**: Use nonces or hashes for stricter policy
+```typescript
+// Generate nonce per request
+const nonce = crypto.randomBytes(16).toString('base64');
+response.headers.set('Content-Security-Policy', 
+  `script-src 'self' 'nonce-${nonce}'`);
+```
+
+#### 2. CORS Whitelist Strictness
+
+**Development**: Allow all localhost ports for developer convenience
+
+**Production**: Explicit whitelist only, no wildcards
+
+**Configuration**:
+```bash
+# Development
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# Production
+ALLOWED_ORIGINS=https://trusttrip.com,https://app.trusttrip.com
+```
+
+#### 3. HSTS Preload Considerations
+
+**Caution**: Cannot quickly remove from preload list
+
+**Migration Path**:
+```
+Week 1-4: max-age=2592000 (1 month) - testing
+Month 2: max-age=31536000 (1 year)
+Month 3+: max-age=63072000 (2 years)
+Submit to preload list after 3 months of stability
+```
+
+### Production Deployment Checklist
+
+**Pre-Deployment**:
+- [ ] Verify HTTPS is configured and working
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure `ALLOWED_ORIGINS` with production domains
+- [ ] Test headers locally with curl
+- [ ] Test CORS with different origins
+
+**Post-Deployment**:
+- [ ] Verify headers in browser DevTools
+- [ ] Run security scan on [securityheaders.com](https://securityheaders.com/)
+- [ ] Test CORS preflight requests
+- [ ] Verify HSTS enforcement
+- [ ] Check CSP doesn't block legitimate resources
+- [ ] Test all app functionality
+
+**Monitoring**:
+- [ ] Monitor logs for CSP violations
+- [ ] Track CORS rejection errors
+- [ ] Set up alerts for header configuration changes
+- [ ] Schedule quarterly security audits
+
+### Files Modified/Created
+
+**Created**:
+- `lib/cors.ts` - CORS utility functions and middleware
+- `SECURITY_HEADERS.md` - Comprehensive security headers documentation
+
+**Modified**:
+- `next.config.ts` - Added global security headers configuration
+- `app/api/auth/refresh/route.ts` - Added CORS support
+- `app/api/auth/logout/route.ts` - Added CORS support
+
+### Security Summary
+
+| Security Measure | Status | Benefit |
+|------------------|--------|---------|
+| **HSTS** | ✅ Implemented | Forces HTTPS connections |
+| **CSP** | ✅ Implemented | Prevents XSS attacks |
+| **CORS** | ✅ Implemented | Controls API access |
+| **X-Frame-Options** | ✅ Implemented | Prevents clickjacking |
+| **X-Content-Type-Options** | ✅ Implemented | Prevents MIME sniffing |
+| **Referrer-Policy** | ✅ Implemented | Controls referrer leakage |
+| **Permissions-Policy** | ✅ Implemented | Restricts browser features |
+
+### Related Documentation
+
+- **[SECURITY_HEADERS.md](SECURITY_HEADERS.md)** - Detailed security headers guide
+- **[lib/cors.ts](lib/cors.ts)** - CORS implementation source
+- **[next.config.ts](next.config.ts)** - Security headers configuration
+
+---
+

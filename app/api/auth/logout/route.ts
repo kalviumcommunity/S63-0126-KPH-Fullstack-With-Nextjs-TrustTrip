@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clearRefreshTokenCookie } from "@/lib/tokenManager";
+import { addCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
 
 /**
  * POST /api/auth/logout
@@ -9,7 +10,7 @@ import { clearRefreshTokenCookie } from "@/lib/tokenManager";
  * Process:
  * 1. Clear refresh token HTTP-only cookie
  * 2. Client should also clear localStorage of access token
- * 3. Return success response
+ * 3. Return success response with CORS headers
  *
  * Note: Access token is not revoked on server (stateless JWT).
  * It will remain valid until expiry (15 minutes).
@@ -17,6 +18,8 @@ import { clearRefreshTokenCookie } from "@/lib/tokenManager";
  */
 export async function POST(request: NextRequest) {
   try {
+    const origin = request.headers.get("origin");
+
     // Create response
     const response = NextResponse.json(
       {
@@ -29,9 +32,10 @@ export async function POST(request: NextRequest) {
     // Clear refresh token cookie
     clearRefreshTokenCookie(response);
 
-    return response;
+    return addCorsHeaders(response, origin);
   } catch (error) {
     console.error("Logout error:", error);
+    const origin = request.headers.get("origin");
 
     const response = NextResponse.json(
       {
@@ -44,22 +48,19 @@ export async function POST(request: NextRequest) {
     // Still clear cookie on error
     clearRefreshTokenCookie(response);
 
-    return response;
+    return addCorsHeaders(response, origin);
   }
 }
 
 /**
  * OPTIONS /api/auth/logout
- * Handles CORS preflight for logout endpoint
+ * Handles CORS preflight for logout endpoint with secure configuration
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL || "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Allow-Credentials": "true",
-    },
+  const origin = request.headers.get("origin");
+  return handleCorsPreflightRequest(origin, {
+    methods: ["POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+    credentials: true,
   });
 }

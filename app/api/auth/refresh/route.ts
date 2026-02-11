@@ -8,6 +8,7 @@ import {
 } from "@/lib/tokenManager";
 import { NextRequest, NextResponse } from "next/server";
 import { handleAsyncError } from "@/lib/errorHandler";
+import { addCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
 
 /**
  * POST /api/auth/refresh
@@ -20,6 +21,7 @@ import { handleAsyncError } from "@/lib/errorHandler";
  * - Rotates refresh token on use
  * - Returns 401 if refresh token invalid/expired
  * - Clears cookie on token expiration for cleanup
+ * - CORS headers for cross-origin requests
  *
  * Process:
  * 1. Extract refresh token from HTTP-only cookie
@@ -31,11 +33,14 @@ import { handleAsyncError } from "@/lib/errorHandler";
  */
 export async function POST(request: NextRequest) {
   try {
+    const origin = request.headers.get("origin");
+
     // Extract refresh token from cookie
     const refreshToken = request.cookies.get("refreshToken")?.value;
 
     if (!refreshToken) {
-      return createAuthErrorResponse("No refresh token found", 401);
+      const response = createAuthErrorResponse("No refresh token found", 401);
+      return addCorsHeaders(response, origin);
     }
 
     // Verify refresh token
@@ -51,7 +56,7 @@ export async function POST(request: NextRequest) {
       // Clear expired token cookie
       clearRefreshTokenCookie(response);
 
-      return response;
+      return addCorsHeaders(response, origin);
     }
 
     // Generate new tokens
@@ -80,24 +85,23 @@ export async function POST(request: NextRequest) {
     // Set new refresh token in HTTP-only cookie (rotation)
     setRefreshTokenCookie(response, newRefreshToken);
 
-    return response;
+    return addCorsHeaders(response, origin);
   } catch (error) {
-    return handleAsyncError(error, "POST", "/api/auth/refresh");
+    const response = await handleAsyncError(error, "POST", "/api/auth/refresh");
+    const origin = request.headers.get("origin");
+    return addCorsHeaders(response, origin);
   }
 }
 
 /**
  * OPTIONS /api/auth/refresh
- * Handles CORS preflight for refresh endpoint
+ * Handles CORS preflight for refresh endpoint with secure configuration
  */
 export async function OPTIONS(request: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL || "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Allow-Credentials": "true",
-    },
+  const origin = request.headers.get("origin");
+  return handleCorsPreflightRequest(origin, {
+    methods: ["POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+    credentials: true,
   });
 }
