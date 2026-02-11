@@ -1,0 +1,228 @@
+# ===========================================
+# TrustTrip - AWS ECS Deployment Pipeline
+# ===========================================
+#
+# This workflow automates the build, push, and deploy
+# process for the TrustTrip Next.js application to AWS ECS.
+#
+# Trigger: Push to main branch or manual workflow dispatch
+# ===========================================
+
+name: Deploy to AWS ECS
+
+# ===========================================
+# Workflow Triggers
+# ===========================================
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+
+# ===========================================
+# Environment Variables
+# ===========================================
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: trusttrip
+  ECS_SERVICE: trusttrip-service
+  ECS_CLUSTER: trusttrip-cluster
+  CONTAINER_NAME: trusttrip
+
+# ===========================================
+# Job Definition
+# ===========================================
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    # ===========================================
+    # Job Steps
+    # ===========================================
+    steps:
+      # -----------------------------------------
+      # 1. Checkout Code
+      # -----------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -----------------------------------------
+      # 2. Configure AWS Credentials
+      # -----------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -----------------------------------------
+      # 3. Login to Amazon ECR
+      # -----------------------------------------
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -----------------------------------------
+      # 4. Build, Tag, and Push Image to ECR
+      # -----------------------------------------
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build the Docker image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+
+          # Push the image to Amazon ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          # Also push with 'latest' tag for easy reference
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # -----------------------------------------
+      # 5. Download Task Definition Template
+      # -----------------------------------------
+      - name: Download task definition template
+        run: |
+          # Create task-definition.json from template
+          cat > task-definition.json <<EOF
+          {
+            "family": "trusttrip-task",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "512",
+            "memory": "1024",
+            "executionRoleArn": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsTaskExecutionRole",
+            "taskRoleArn": "arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsTaskRole",
+            "containerDefinitions": [
+              {
+                "name": "${{ env.CONTAINER_NAME }}",
+                "image": "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}",
+                "essential": true,
+                "portMappings": [
+                  {
+                    "containerPort": 3000,
+                    "protocol": "tcp"
+                  }
+                ],
+                "environment": [
+                  {"name": "NODE_ENV", "value": "production"},
+                  {"name": "NEXT_TELEMETRY_DISABLED", "value": "1"}
+                ],
+                "secrets": [
+                  {"name": "DATABASE_URL", "valueFrom": "${{ secrets.DATABASE_URL_ARN }}"},
+                  {"name": "REDIS_URL", "valueFrom": "${{ secrets.REDIS_URL_ARN }}"},
+                  {"name": "JWT_SECRET", "valueFrom": "${{ secrets.JWT_SECRET_ARN }}"},
+                  {"name": "AWS_ACCESS_KEY_ID", "valueFrom": "${{ secrets.AWS_ACCESS_KEY_ID_ARN }}"},
+                  {"name": "AWS_SECRET_ACCESS_KEY", "valueFrom": "${{ secrets.AWS_SECRET_ACCESS_KEY_ARN }}"},
+                  {"name": "AWS_REGION", "valueFrom": "${{ secrets.AWS_REGION_ARN }}"},
+                  {"name": "AWS_BUCKET_NAME", "valueFrom": "${{ secrets.AWS_BUCKET_NAME_ARN }}"},
+                  {"name": "NEXT_PUBLIC_API_URL", "valueFrom": "${{ secrets.NEXT_PUBLIC_API_URL_ARN }}"}
+                ],
+                "healthCheck": {
+                  "command": ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/test', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""],
+                  "interval": 30,
+                  "timeout": 5,
+                  "retries": 3,
+                  "startPeriod": 60
+                },
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/trusttrip",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+
+      # -----------------------------------------
+      # 6. Register Task Definition
+      # -----------------------------------------
+      - name: Register task definition
+        run: |
+          aws ecs register-task-definition --cli-input-json file://task-definition.json
+
+      # -----------------------------------------
+      # 7. Update ECS Service
+      # -----------------------------------------
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition trusttrip-task \
+            --force-new-deployment
+
+      # -----------------------------------------
+      # 8. Wait for Service Stability
+      # -----------------------------------------
+      - name: Wait for service stability
+        uses: aws-actions/amazon-ecs-wait-for-stable@v1
+        with:
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          timeout: 300
+
+      # -----------------------------------------
+      # 9. Describe Service Status
+      # -----------------------------------------
+      - name: Describe service status
+        run: |
+          echo "Service status:"
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].{serviceName:serviceName,status:status,runningCount:runningCount,desiredCount:desiredCount,deployments:deployments}' \
+            --output table
+
+      # -----------------------------------------
+      # 10. Get Service URL (ALB DNS)
+      # -----------------------------------------
+      - name: Get service URL
+        id: service-url
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names trusttrip-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
+          echo "Service URL: http://${ALB_DNS}"
+          echo "service-url=http://${ALB_DNS}" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------
+      # 11. Health Check
+      # -----------------------------------------
+      - name: Health check
+        run: |
+          sleep 30
+          curl -f http://${{ steps.service-url.outputs.service-url }}/api/test || exit 1
+
+      # -----------------------------------------
+      # 12. Deployment Summary
+      # -----------------------------------------
+      - name: Deployment summary
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Deployment Complete!"
+          echo "=========================================="
+          echo "Repository: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
+          echo "Image Tag: ${{ github.sha }}"
+          echo "Service URL: http://${{ steps.service-url.outputs.service-url }}"
+          echo "ECS Cluster: ${{ env.ECS_CLUSTER }}"
+          echo "ECS Service: ${{ env.ECS_SERVICE }}"
+          echo "=========================================="
+
