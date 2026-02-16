@@ -2922,3 +2922,174 @@ curl http://localhost:3000/non-existent-page
 
 ---
 
+
+---
+
+## Jest & React Testing Library Setup
+
+### Overview
+
+TrustTrip is configured with **Jest** and **React Testing Library (RTL)** for unit and component testing. This ensures code reliability, facilitates refactoring, and prevents regressions.
+
+### Installation
+
+The following dependencies are already installed:
+
+```bash
+npm install --save-dev jest @testing-library/react @testing-library/jest-dom @testing-library/user-event ts-jest @types/jest jest-environment-jsdom
+```
+
+### Configuration Files
+
+#### 1. jest.config.js
+
+```javascript
+const nextJest = require('next/jest');
+
+const createJestConfig = nextJest({
+  dir: './',
+});
+
+const customJestConfig = {
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  testEnvironment: 'jsdom',
+  collectCoverage: true,
+  collectCoverageFrom: [
+    'lib/utils.ts',
+    'components/**/*.{js,jsx,ts,tsx}',
+    '!components/**/*.test.{js,jsx,ts,tsx}',
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 20,
+      functions: 30,
+      lines: 40,
+      statements: 40,
+    },
+  },
+  moduleNameMapper: {
+    '^@/(.*)$': '<    '^@/(.1',
+    '^@/(.*)$': '<    '^@/(.1',
+sx,ts,tsx}',
+js'],
+@testing-library/jest-dom @testing-library/user-event ts-jest @types/jest jest-environment-jsdom
+tConfig(customJestConfig);
+```
+
+#### 2. jest.setup.js
+
+```javascript
+import '@testing-library/jest-dom';
+```
+
+### Test Scripts
+
+The following scripts are available in `package.json`:
+
+| Script | Description |
+|--------|-------------|
+| `npm test` | Run all tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage report |
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Generate coverage report
+npm run test:coverage
+```
+
+### Sample Tests
+
+#### Example 1: Logic Test (lib/utils.ts)
+
+```typescrip```typescrip```typescrip```typescr = (a```typescrip```typescrip```typescrip```typeort const calculateRefund = (
+  originalAmount: number,
+  daysBeforeDeparture: number
+): number => {
+  if (daysBeforeDeparture > 7) {
+                    moun                    moun      rt                    moun      lAmount * 0.5;
+  }
+  return 0;
+};
+```
+
+```typescript
+// __tests__/utils.test.ts
+import { add, calculateRefund } from 'import { add, calcut('adds two numbers correctly', () =import { adt(aimport { add, calculateRefund } frrnim100import { ahen moreimport { add, calculateRefund } from 'import { add, culaimport { ad0, 8)).toBe(10import { add, calculns 50import { add, calculateRefure dimport { add, calculateRefund } from 'import { ad5)import { add, calculateRefund } from 'import { add, calcueToggle)
+
+```typescript
+// __tests__/ThemeToggle.test.tsx
+// __tests__/ThemeToggle fireEvent } from '@testing-library/react';
+import { ThemeToggle } from '@/components/ThemeToggle';
+
+jest.mock('@/lib/theme-provider', ()jest.mock('@/lib/theme-provider', ()jest.mock('@/lib/theme-provider', ()jest.mock('@/lib/theme-provider', ()jest.mock('@enders the theme toggle buttonjest.mock(
+  render(<ThemeTogg  render(<Thest  render(<ThemeTogg  render(<Thto  render(<ThemeTogg  render(<Thest  render(<ThemeTogg  render(<Thto  render(<ThemeTogg  rende toggleTheme  render(<ke ', () => {
+  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(<  render(<  render(< nst bu  render(< ---  render(<  --------------
+All files         |   63.63 |     27.5 |   68.75 |   60.78 |
+ components       |   27.27  components       |   27.27  components       |   27       0 |        0 |       0 |       0 | 8-103
+  ThemeToggle.tsx |      75 |    36.36 |      75 |   81.81 | 102-103
+ lib              |     100 |      100 |     100 |     100 |
+  utils.ts        |     100 |      100 |     100 |     100 |
+------------------|---------|----------|---------|---------|-------------------
+
+Test Suites: 2 passed, 2 total
+Tests:       28 passed, 28 total
+```
+
+### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cove### Cover### Cover### Cover### Cover### Cover### Cover#age re### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Cover### Coveric### Cover### Cover### Cover### Cover### Cover### Cover### Cover### ��─ jest.config.js            # Jest configuration
+├── ├── ├── ├── ├── ├── ├�  └�├── ├── ├── ├── ├── ├── ├�  └on Testing ├── ├── ├─�urac├── ├── ├── � show:
+├── ├── ├── ├── ├── ├── ├�  └�├── ├── ├── ├── ├── ├── ├�  └on Testing ├── ├── ├─�urac├── ├── ├── � show:
+(would require integration tests with mocked database)
+- Hooks (useRole, etc.)
+- Complex components (RoleGuard, AddUser)
+- Edge cases and error states
+
+#### Testing Pyramid
+
+The testing pyramid guides our strategy:
+
+```
+        /\
+       /E2E\        ← Few, expensive, comprehensive
+      /----\
+     /Integ\       ← Moderate, testing component integration
+    /------\
+   /  Unit  \      ← Many, fast, isolated
+  /--------\
+```
+
+**Current State:**
+- **Unit Tests**: Well-established (28 passing tests)
+- **Component Tests**: Started (ThemeToggle)
+- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests**: Not- **Integration Tests*tests for API routes with mocked Prisma
+4. Consider E2E tests with Playwright for critical user flows
+
+#### Why Testing Matters
+
+1. **Reliability**: Tests catch regressions before they reach production
+2. **Refactoring Confi2. **Refactoring Confi2. **Refactoring Confi2. **Re **D2. **Refactoring Csts se2. **Refactoring Confi2. **Refactori*Colla2. **Refactoring Confi2. can un2. **Refactorinntent through tests
+
+#### Recommendations for Future
+
+1. **Incre1. **Incre1. **Incre1. **Increerage for critical paths
+2. **Add Int2. **Add Int2. **Add Int2. **Add Int2. **Add Int2. **Add Int2 *2. *pshot Tes2. **Add Int2. **Add Int2. **Add Int2. *s
+4.4.4.4.4.4.n T4.ting**: Verify test ef4.4.4.4.4.4.n T4.ting**: Verify test ef4.4.4.4.4.4.n**: Implement for critical user journeys (booking flow, auth)
+
+---
+
+## Conclusion
+
+TrustTrip is a well-structured Next.js application with:
+- ✅ Modern Tech Stack (Next.js 16, React 19, TypeScript)
+- ✅ Comprehensive API Architecture
+- ✅ Database Integration (Prisma + PostgreSQL)
+- ✅ Authentication & Authorization (JWT + RBAC- ✅ Authentication & Authorization (JWT + RBAC- ✅ Authen- ✅ Unit & Component Testing (Jest + RTL)
+
+The testing setup provides a solid foundation for maintaining code quality as the project grows.
