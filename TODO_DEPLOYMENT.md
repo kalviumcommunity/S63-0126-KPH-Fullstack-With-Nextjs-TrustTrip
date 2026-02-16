@@ -1,6 +1,6 @@
 # Cloud Deployment & Containerization Plan
 
-## Project: TrustTrip Next.js Application
+## Project: TrustTrip Next.js Applicationyes
 
 **Objective:** Containerize the Next.js application and deploy to AWS ECS (Fargate) with CI/CD pipeline
 
